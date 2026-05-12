@@ -1,19 +1,15 @@
 {
-  "name": "clarity-html",
-  "displayName": "Clarity HTML",
-  "description": "Automatically opens Simple Browser alongside any HTML file you open in Cursor",
+  "name": "gossamer",
+  "displayName": "Gossamer",
+  "description": "Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser without leaving your editor",
   "version": "1.0.0",
   "publisher": "ashvinbondada",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onLanguage:html"
-  ],
+  "categories": ["Other"],
+  "activationEvents": ["onLanguage:html"],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",
@@ -21,9 +17,9 @@
   },
   "contributes": {
     "configuration": {
-      "title": "ContextHTML",
+      "title": "Gossamer",
       "properties": {
-        "contexthtml.openEditor": {
+        "gossamer.openEditor": {
           "type": "boolean",
           "default": false,
           "description": "Also open the HTML file in the text editor alongside Simple Browser. When false, only Simple Browser opens."
@@ -33,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ashvinbondada/clarity-html.git"
+    "url": "https://github.com/ashvinbondada/gossamer.git"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

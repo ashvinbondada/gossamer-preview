@@ -1,6 +1,6 @@
 # Gossamer Preview
 
-![Gossamer](https://raw.githubusercontent.com/ashvinbondada/gossamer/main/gossamer.png)
+![Gossamer](https://raw.githubusercontent.com/ashvinbondada/gossamer-preview/main/gossamer.png)
 
 Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser without leaving your editor.
 
@@ -20,9 +20,9 @@ AI coding agents like Claude, Claude Code, and Cursor generate HTML files as ric
 Search **Gossamer Preview** in the VS Code or Cursor extension marketplace, or install via CLI:
 
 ```bash
-cursor --install-extension ashvinbondada.gossamer
+cursor --install-extension ashvinbondada.gossamer-preview
 # or
-code --install-extension ashvinbondada.gossamer
+code --install-extension ashvinbondada.gossamer-preview
 ```
 
 ## Configuration
@@ -30,7 +30,7 @@ code --install-extension ashvinbondada.gossamer
 By default, only Simple Browser opens (no editor tab). To also open the raw HTML in the editor:
 
 ```json
-"gossamer.openEditor": true
+"gossamer-preview.openEditor": true
 ```
 
 ## Requirements

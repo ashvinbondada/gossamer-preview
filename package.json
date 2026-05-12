@@ -1,5 +1,5 @@
 {
-  "name": "gossamer",
+  "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
   "description": "Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser without leaving your editor",
   "version": "1.0.0",
@@ -17,9 +17,9 @@
   },
   "contributes": {
     "configuration": {
-      "title": "Gossamer",
+      "title": "Gossamer Preview",
       "properties": {
-        "gossamer.openEditor": {
+        "gossamer-preview.openEditor": {
           "type": "boolean",
           "default": false,
           "description": "Also open the HTML file in the text editor alongside Simple Browser. When false, only Simple Browser opens."
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ashvinbondada/gossamer.git"
+    "url": "https://github.com/ashvinbondada/gossamer-preview.git"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

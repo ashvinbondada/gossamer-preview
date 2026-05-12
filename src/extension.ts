@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
     lastOpenedUri = uriString;
 
     const openEditor = vscode.workspace
-      .getConfiguration('gossamer')
+      .getConfiguration('gossamer-preview')
       .get<boolean>('openEditor', false);
 
     vscode.commands.executeCommand('simpleBrowser.show', uriString).then(() => {

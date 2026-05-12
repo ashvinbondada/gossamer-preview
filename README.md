@@ -15,7 +15,7 @@ AI coding agents like Claude, Claude Code, and Cursor generate HTML files as ric
 
 ## Installation
 
-Search **Clarity** in the VS Code or Cursor extension marketplace, or install via CLI:
+Search **Clarity HTML** in the VS Code or Cursor extension marketplace, or install via CLI:
 
 ```bash
 cursor --install-extension ashvinbondada.contexthtml

@@ -1,6 +1,6 @@
 {
   "name": "contexthtml",
-  "displayName": "Clarity",
+  "displayName": "Clarity HTML",
   "description": "Automatically opens Simple Browser alongside any HTML file you open in Cursor",
   "version": "1.0.0",
   "publisher": "ashvinbondada",

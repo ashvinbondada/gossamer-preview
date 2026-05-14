@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LiveReloadServer } from './liveReload';
+import { registerDiffCommand } from './diffView';
 
 const CONFIG_KEY = 'gossamer-preview';
 let lastOpenedUri = '';
@@ -67,6 +68,8 @@ export async function activate(context: vscode.ExtensionContext) {
     server.setFile(filePath);
     return `http://127.0.0.1:${server.port}/`;
   });
+
+  registerDiffCommand(context);
 }
 
 export function deactivate() {}

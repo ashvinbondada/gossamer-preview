@@ -16,6 +16,12 @@
     "vscode:prepublish": "npm run compile"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "gossamer-preview.compareFiles",
+        "title": "Gossamer Preview: Compare HTML Files"
+      }
+    ],
     "configuration": {
       "title": "Gossamer Preview",
       "properties": {

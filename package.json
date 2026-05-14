@@ -2,14 +2,18 @@
   "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
   "description": "Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser without leaving your editor",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "publisher": "ashvinbondada",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onLanguage:html"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:html"
+  ],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",

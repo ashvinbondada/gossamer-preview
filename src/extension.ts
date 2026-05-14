@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
+import { LiveReloadServer } from './liveReload';
 
 const CONFIG_KEY = 'gossamer-preview';
-
 let lastOpenedUri = '';
 
 export function registerOpenListener(
@@ -48,7 +48,25 @@ export function registerOpenListener(
 }
 
 export async function activate(context: vscode.ExtensionContext) {
-  registerOpenListener(context, (fileUri: string) => fileUri);
+  const server = new LiveReloadServer();
+  await server.start();
+
+  context.subscriptions.push({ dispose: () => server.dispose() });
+
+  const saveListener = vscode.workspace.onDidSaveTextDocument((doc) => {
+    if (doc.uri.scheme !== 'file') return;
+    const isHtml = doc.languageId === 'html' || doc.fileName.endsWith('.html');
+    if (!isHtml) return;
+    server.setFile(doc.fileName);
+    server.reload();
+  });
+  context.subscriptions.push(saveListener);
+
+  registerOpenListener(context, (fileUri: string) => {
+    const filePath = vscode.Uri.parse(fileUri).fsPath;
+    server.setFile(filePath);
+    return `http://127.0.0.1:${server.port}/`;
+  });
 }
 
 export function deactivate() {}

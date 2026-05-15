@@ -2,18 +2,26 @@
 
 ![Gossamer](https://raw.githubusercontent.com/ashvinbondada/gossamer-preview/main/gossamer.png)
 
-Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser without leaving your editor.
+Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser with live reload — without leaving your editor.
 
 ## The Workflow
 
-AI coding agents like Claude, Claude Code, and Cursor generate HTML files as rich visual context — layouts, component mockups, data visualizations, design specs. Gossamer Preview automatically opens those files in the built-in browser the moment you open them, so you can see the rendered output alongside your code without any manual steps.
+AI coding agents like Claude, Claude Code, and Cursor generate HTML files as rich visual context — layouts, component mockups, data visualizations, design specs. Gossamer Preview automatically opens those files in the built-in browser the moment you open them, and live-reloads as you or your agent edits them.
+
+## Features
+
+- **Auto-open** — Simple Browser opens instantly when you open an HTML file
+- **Live reload** — browser updates automatically as you edit, no Cmd+S required
+- **Multi-file** — each HTML file gets its own browser tab with its own live reload
+- **Stable URL** — always served on `http://127.0.0.1:7654/<filename>.html`, so reopening Cursor doesn't break your browser tab
+- **Zero config** — no setup, no dependencies, just install and open an HTML file
 
 ## How It Works
 
 1. Your agent generates an `.html` file
 2. You open the file in Cursor or VS Code
-3. Simple Browser opens automatically in a split panel
-4. You see the rendered HTML instantly — no browser switching, no manual commands
+3. Simple Browser opens automatically in a split panel at `http://127.0.0.1:7654/<filename>.html`
+4. As you or your agent edits the file, the browser reloads automatically
 
 ## Installation
 

@@ -5,9 +5,12 @@ import * as crypto from 'crypto';
 const WS_RELOAD_SCRIPT = `
 <script>
 (function() {
+  console.log('[gossamer] connecting to', 'ws://' + location.host);
   var ws = new WebSocket('ws://' + location.host);
-  ws.onmessage = function(e) { if (e.data === 'reload') location.reload(); };
-  ws.onclose = function() { setTimeout(function() { location.reload(); }, 1000); };
+  ws.onopen = function() { console.log('[gossamer] websocket connected'); };
+  ws.onmessage = function(e) { console.log('[gossamer] message:', e.data); if (e.data === 'reload') location.reload(); };
+  ws.onerror = function(e) { console.error('[gossamer] websocket error', e); };
+  ws.onclose = function(e) { console.log('[gossamer] websocket closed', e.code, e.reason); setTimeout(function() { location.reload(); }, 1000); };
 })();
 </script>
 `;
@@ -111,6 +114,7 @@ export class LiveReloadServer {
   }
 
   reload() {
+    console.log(`[gossamer] reload() called, ${this.clients.size} clients connected`);
     this.clients.forEach((ws) => {
       if (ws.readyState === 1) {
         ws.send('reload');

@@ -54,14 +54,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push({ dispose: () => server.dispose() });
 
-  const saveListener = vscode.workspace.onDidSaveTextDocument((doc) => {
+  let debounceTimer: NodeJS.Timeout | undefined;
+  const changeListener = vscode.workspace.onDidChangeTextDocument((event) => {
+    const doc = event.document;
     if (doc.uri.scheme !== 'file') return;
     const isHtml = doc.languageId === 'html' || doc.fileName.endsWith('.html');
     if (!isHtml) return;
     server.setFile(doc.fileName);
-    server.reload();
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => server.reload(), 500);
   });
-  context.subscriptions.push(saveListener);
+  context.subscriptions.push(changeListener);
 
   registerOpenListener(context, (fileUri: string) => {
     const filePath = vscode.Uri.parse(fileUri).fsPath;

@@ -12,18 +12,46 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:html"
+    "onLanguage:html",
+    "onCommand:gossamer-preview.open",
+    "onCustomEditor:gossamer-preview.html"
   ],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run compile",
+    "test:unit": "tsc -p ./ && mocha --recursive 'out/test/unit/**/*.test.js' --timeout 10000",
+    "test:integration": "tsc -p ./ && node ./out/test/integration/runTest.js",
+    "test": "npm run test:unit && npm run test:integration"
   },
   "contributes": {
     "commands": [
       {
+        "command": "gossamer-preview.open",
+        "title": "Gossamer Preview: Open Current HTML File"
+      },
+      {
         "command": "gossamer-preview.compareFiles",
         "title": "Gossamer Preview: Compare HTML Files"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "gossamer-preview.open",
+          "when": "resourceLangId == html || resourceExtname == .html"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "gossamer-preview.html",
+        "displayName": "Gossamer Preview",
+        "selector": [
+          { "filenamePattern": "*.html" },
+          { "filenamePattern": "*.htm" }
+        ],
+        "priority": "default"
       }
     ],
     "configuration": {
@@ -48,7 +76,12 @@
   "devDependencies": {
     "@types/vscode": "^1.80.0",
     "@types/node": "^20.0.0",
+    "@types/mocha": "^10.0.0",
     "typescript": "^5.0.0",
-    "@vscode/vsce": "^2.22.0"
+    "@vscode/vsce": "^2.22.0",
+    "mocha": "^10.2.0",
+    "@vscode/test-electron": "^2.3.0",
+    "glob": "^8.1.0",
+    "@types/glob": "^8.1.0"
   }
 }

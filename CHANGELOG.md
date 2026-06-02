@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.3]
+
+- Edit Source button is now a toggle — click once to open the source editor beside the preview, click again to close it
+- Added in-editor update notifications — a banner appears after each update with a link to the changelog
+
 ## [1.2.0]
 
 - Fixed port to `7654` so Simple Browser tabs survive Cursor restarts

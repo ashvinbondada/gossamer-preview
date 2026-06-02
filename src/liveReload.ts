@@ -2,7 +2,10 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 
-const WS_RELOAD_SCRIPT = `
+const INJECTED = `
+<style>
+:root { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
+</style>
 <script>
 (function() {
   var ws = new WebSocket('ws://' + location.host + location.pathname);
@@ -12,18 +15,27 @@ const WS_RELOAD_SCRIPT = `
 </script>
 `;
 
-function injectReloadScript(html: string): string {
+export function injectReloadScript(html: string): string {
   if (html.includes('</body>')) {
-    return html.replace('</body>', WS_RELOAD_SCRIPT + '</body>');
+    return html.replace('</body>', INJECTED + '</body>');
   }
-  return html + WS_RELOAD_SCRIPT;
+  return html + INJECTED;
 }
 
 export class LiveReloadServer {
   private server: http.Server;
   private clients: Map<string, Set<any>> = new Map(); // urlPath -> clients
   private fileMap: Map<string, string> = new Map(); // urlPath -> fsPath
+  private bufferText: Map<string, string> = new Map(); // fsPath -> in-memory editor text
   public port = 0;
+
+  setBufferText(fsPath: string, text: string) {
+    this.bufferText.set(fsPath, text);
+  }
+
+  clearBufferText(fsPath: string) {
+    this.bufferText.delete(fsPath);
+  }
 
   // Returns the URL path for a given fs path, registering it if new.
   registerFile(fsPath: string): string {
@@ -45,7 +57,7 @@ export class LiveReloadServer {
         return;
       }
       try {
-        const html = fs.readFileSync(fsPath, 'utf8');
+        const html = this.bufferText.get(fsPath) ?? fs.readFileSync(fsPath, 'utf8');
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(injectReloadScript(html));
       } catch {

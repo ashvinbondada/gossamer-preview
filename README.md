@@ -2,7 +2,7 @@
 
 ![Gossamer](https://raw.githubusercontent.com/ashvinbondada/gossamer-preview/main/gossamer.png)
 
-Instantly preview AI-generated HTML files in the Cursor/VS Code Simple Browser with live reload — without leaving your editor.
+Instantly preview AI-generated HTML files in Cursor/VS Code with live reload, find-in-page, zoom, and source editing — without leaving your editor.
 
 ## The Workflow
 
@@ -10,18 +10,23 @@ AI coding agents like Claude, Claude Code, and Cursor generate HTML files as ric
 
 ## Features
 
-- **Auto-open** — Simple Browser opens instantly when you open an HTML file
+- **Auto-open** — preview opens instantly when you open an HTML file
 - **Live reload** — browser updates automatically as you edit, no Cmd+S required
-- **Multi-file** — each HTML file gets its own browser tab with its own live reload
-- **Stable URL** — always served on `http://127.0.0.1:7654/<filename>.html`, so reopening Cursor doesn't break your browser tab
+- **Multi-file** — each HTML file gets its own browser tab with independent live reload
+- **Stable URL** — always served on `http://127.0.0.1:7654/<filename>.html`, so reopening Cursor doesn't break your tab
+- **Edit Source toggle** — open and close the HTML source editor alongside the preview with one click
+- **Find in page** — Cmd/Ctrl+F search with match highlighting and navigation
+- **Zoom controls** — zoom in/out/reset via toolbar or Cmd/Ctrl+`+`/`-`/`0`
+- **Update notifications** — in-editor banner when a new version is installed, with a changelog link
 - **Zero config** — no setup, no dependencies, just install and open an HTML file
 
 ## How It Works
 
 1. Your agent generates an `.html` file
 2. You open the file in Cursor or VS Code
-3. Simple Browser opens automatically in a split panel at `http://127.0.0.1:7654/<filename>.html`
+3. The preview opens automatically in a split panel at `http://127.0.0.1:7654/<filename>.html`
 4. As you or your agent edits the file, the browser reloads automatically
+5. Use the toolbar to find text, zoom, or toggle the source editor open/closed
 
 ## Installation
 
@@ -31,14 +36,6 @@ Search **Gossamer Preview** in the VS Code or Cursor extension marketplace, or i
 cursor --install-extension ashvinbondada.gossamer-preview
 # or
 code --install-extension ashvinbondada.gossamer-preview
-```
-
-## Configuration
-
-By default, only Simple Browser opens (no editor tab). To also open the raw HTML in the editor:
-
-```json
-"gossamer-preview.openEditor": true
 ```
 
 ## Requirements

@@ -7,6 +7,12 @@ export function escapeAttr(s: string): string {
 
 export function buildToolbarMarkup(previewUrl: string, title: string): string {
   return `<div class="frame-wrap" id="wrap">
+  <div class="skeleton" id="skeleton" aria-hidden="true">
+    <div class="skel-line skel-line-1"></div>
+    <div class="skel-line skel-line-2"></div>
+    <div class="skel-line skel-line-3"></div>
+    <div class="skel-line skel-line-4"></div>
+  </div>
   <iframe id="frame" src="${escapeAttr(previewUrl)}"></iframe>
 
   <div class="toolbar" id="toolbar">
@@ -114,9 +120,17 @@ ${perfHeader}
   __mark('elements queried');
 
   function applyZoom() {
-    frame.style.transform = 'scale(' + zoom + ')';
-    frame.style.width = (100 / zoom) + '%';
-    frame.style.height = (100 / zoom) + '%';
+    // At zoom=1 we leave transform empty so the iframe doesn't get a compositor
+    // layer pinned at first paint. Only opt into the scale transform when needed.
+    if (zoom === 1) {
+      frame.style.transform = '';
+      frame.style.width = '100%';
+      frame.style.height = '100%';
+    } else {
+      frame.style.transform = 'scale(' + zoom + ')';
+      frame.style.width = (100 / zoom) + '%';
+      frame.style.height = (100 / zoom) + '%';
+    }
     zoomLabel.textContent = Math.round(zoom * 100) + '%';
   }
   function setZoom(z) { zoom = Math.max(0.25, Math.min(4, z)); applyZoom(); }
@@ -347,17 +361,33 @@ ${perfHeader}
   // wire the iframe-side listener due to a cross-origin bug).
   document.addEventListener('keydown', handleKey, false);
 
+  var skeleton = document.getElementById('skeleton');
+  function hideSkeleton() {
+    if (!skeleton) return;
+    skeleton.classList.add('hidden');
+    // Remove from DOM after the fade so it stops animating and gets out of the
+    // compositor layer tree.
+    setTimeout(function() { if (skeleton && skeleton.parentNode) skeleton.parentNode.removeChild(skeleton); }, 320);
+  }
+
   if (frame && frame.addEventListener) {
     __mark('iframe load listener attached');
     frame.addEventListener('load', function() {
       __mark('iframe LOAD fired');
-      // Reach into the iframe and wait for its DOMContentLoaded + first paint if possible.
+      hideSkeleton();
       try {
         var fdoc = frame.contentDocument;
         if (fdoc) __mark('iframe contentDocument readyState=' + fdoc.readyState);
       } catch (e) { __mark('iframe cross-origin (expected)'); }
       if (toolbar.classList.contains('open') && findInput.value) sendFind(findInput.value);
     });
+    // Safety net: if the load event already fired before this script ran (race),
+    // drop the skeleton on the next tick.
+    setTimeout(function() {
+      try {
+        if (frame.contentDocument && frame.contentDocument.readyState === 'complete') hideSkeleton();
+      } catch (e) { /* cross-origin = it's loaded, hide */ hideSkeleton(); }
+    }, 0);
   }
 
   var dimTimer = null;
@@ -410,14 +440,44 @@ export const PREVIEW_STYLES = `
   body { display: flex; flex-direction: column; overflow: hidden; }
 
   .frame-wrap { position: relative; flex: 1; overflow: auto; background: white; }
-  iframe { width: 100%; height: 100%; border: none; display: block; transform-origin: 0 0; background: white; }
+  iframe { width: 100%; height: 100%; border: none; display: block; transform-origin: 0 0; background: white; position: relative; z-index: 2; }
+
+  /* Skeleton: paints immediately, sits behind the iframe, fades out after first
+     iframe load. Pure CSS, no JS gating on first paint = no script-blocking cost. */
+  .skeleton {
+    position: absolute; inset: 0;
+    background: #fafafa;
+    padding: 64px 72px;
+    z-index: 1;
+    opacity: 1;
+    transition: opacity 240ms ease;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .skeleton.hidden { opacity: 0; }
+  .skel-line {
+    height: 14px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #eee 0%, #f5f5f5 50%, #eee 100%);
+    background-size: 200% 100%;
+    animation: skel-shimmer 1400ms ease-in-out infinite;
+    margin-bottom: 16px;
+  }
+  .skel-line-1 { width: 38%; height: 22px; margin-bottom: 28px; }
+  .skel-line-2 { width: 78%; }
+  .skel-line-3 { width: 92%; }
+  .skel-line-4 { width: 64%; }
+  @keyframes skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 
   .toolbar {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
     z-index: 10;
-    background: rgba(20,20,22,0.78);
-    backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    /* Solid opaque background — backdrop-filter was forcing per-frame readback
+       and compositor work, hurting first paint by 100-300ms in the webview. */
+    background: rgba(20,20,22,0.94);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 999px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25);
@@ -517,9 +577,7 @@ export const PREVIEW_STYLES = `
   .history {
     position: absolute; top: 100%; margin-top: 8px;
     left: 0; right: 0;
-    background: rgba(20,20,22,0.94);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    background: rgba(20,20,22,0.97);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     box-shadow: 0 12px 32px rgba(0,0,0,0.4);

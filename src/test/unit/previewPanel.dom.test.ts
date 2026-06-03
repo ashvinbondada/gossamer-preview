@@ -504,4 +504,51 @@ window.__vscodeCalls = [];
       }
     });
   });
+
+  describe('loading skeleton', () => {
+    it('renders a skeleton element in the toolbar markup', () => {
+      const { document } = setup();
+      const skel = document.getElementById('skeleton');
+      assert.ok(skel, 'skeleton must exist on first paint');
+      assert.ok(skel!.querySelectorAll('.skel-line').length >= 3,
+        'skeleton must contain shimmer lines');
+    });
+
+    it('skeleton has aria-hidden so screen readers ignore it', () => {
+      const { document } = setup();
+      assert.strictEqual(document.getElementById('skeleton')!.getAttribute('aria-hidden'), 'true');
+    });
+
+    it('skeleton sits behind the iframe (z-index ordering via DOM order + CSS)', () => {
+      // The iframe is declared AFTER the skeleton in markup, with iframe { z-index: 2 }
+      // and .skeleton { z-index: 1 }. We assert the structural contract here.
+      const { document } = setup();
+      const wrap = document.getElementById('wrap')!;
+      const skelIdx = Array.from(wrap.children).indexOf(document.getElementById('skeleton')!);
+      const frameIdx = Array.from(wrap.children).indexOf(document.getElementById('frame')!);
+      assert.ok(skelIdx >= 0 && frameIdx >= 0);
+      assert.ok(skelIdx < frameIdx,
+        'skeleton must come before iframe in DOM so the iframe sits on top');
+    });
+
+    it('iframe load event hides the skeleton (adds .hidden class)', () => {
+      const { window, document } = setup();
+      const frame = document.getElementById('frame')!;
+      const skel = document.getElementById('skeleton')!;
+      assert.ok(!skel.classList.contains('hidden'), 'skeleton starts visible');
+      frame.dispatchEvent(new (window as any).Event('load', { bubbles: false }));
+      assert.ok(skel.classList.contains('hidden'),
+        'iframe load must add .hidden to skeleton so it fades out');
+    });
+
+    it('skeleton is removed from DOM after the fade-out delay', async () => {
+      const { window, document } = setup();
+      const frame = document.getElementById('frame')!;
+      frame.dispatchEvent(new (window as any).Event('load', { bubbles: false }));
+      // hideSkeleton schedules removal after 320ms.
+      await new Promise(r => setTimeout(r, 400));
+      assert.strictEqual(document.getElementById('skeleton'), null,
+        'skeleton element must be removed from DOM after fade');
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { buildHtml } from './previewPanel';
+import { perfScope } from './perf';
 
 export const VIEW_TYPE = 'gossamer-preview.html';
 
@@ -14,10 +15,18 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     panel: vscode.WebviewPanel
   ): void {
+    const t = perfScope('customEditor.resolve', document.uri.fsPath);
     panel.webview.options = { enableScripts: true };
+    t.mark('webview.options set');
     const previewUrl = this.getPreviewUrl(document.uri.fsPath);
+    t.mark('getPreviewUrl done');
     const copyPath = vscode.workspace.asRelativePath(document.uri.fsPath, false);
-    panel.webview.html = buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
+    t.mark('asRelativePath done');
+    const html = buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
+    t.mark(`buildHtml done (${html.length} chars)`);
+    panel.webview.html = html;
+    t.mark('webview.html assigned');
+    t.end();
 
     let sourceEditorOpen = false;
 

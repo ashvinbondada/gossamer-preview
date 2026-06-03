@@ -2,15 +2,43 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 
+// Internal dev-only flag. Hard-coded false for shipped builds. Flip locally to
+// emit iframe-side perf marks (forwarded to parent overlay). Not user-toggleable.
+const PERF_OVERLAY_ENABLED = false;
+
+const PERF_HEADER = PERF_OVERLAY_ENABLED ? `
+  function __iframeMark(name) {
+    try {
+      var t = (performance.now ? performance.now() : Date.now());
+      parent.postMessage({ type: 'gossamer-perf', name: name, t: t }, '*');
+    } catch (e) {}
+  }
+  __iframeMark('iframe script start');
+` : `
+  function __iframeMark() {}
+`;
+
 const INJECTED = `
 <style>
 :root { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
 </style>
 <script>
 (function() {
+${PERF_HEADER}
   var ws = new WebSocket('ws://' + location.host + location.pathname);
   ws.onmessage = function(e) { if (e.data === 'reload') location.reload(); };
   ws.onclose = function() { setTimeout(function() { location.reload(); }, 1000); };
+  __iframeMark('iframe WS connecting');
+  if (ws && typeof ws.addEventListener === 'function') {
+    ws.addEventListener('open', function() { __iframeMark('iframe WS open'); });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { __iframeMark('iframe DOMContentLoaded'); });
+  } else {
+    __iframeMark('iframe DOM already ready');
+  }
+  window.addEventListener('load', function() { __iframeMark('iframe window LOAD'); });
 
   var HL = '__gossamer_hit__';
   var ACTIVE = '__gossamer_hit_active__';
@@ -122,15 +150,23 @@ const INJECTED = `
     }
   });
 
+  // Iframe-side keydown listener — BUBBLE PHASE (not capture).
+  //
+  // Why bubble? Capture-phase listeners on the iframe document are seen by Cursor/
+  // VS Code's keybinding shim as "the page is handling this," which suppresses
+  // host shortcuts like Cmd+P / Cmd+Shift+P. Bubble phase still gives us a chance
+  // to forward Cmd+F up to the parent webview (so Find works when focus is inside
+  // the previewed page), without preventing other modifier chords from reaching
+  // the host. We only call preventDefault for the SIX keys we actually handle.
   document.addEventListener('keydown', function(e) {
     var mod = e.metaKey || e.ctrlKey;
+    // Strict allowlist. For everything else, do nothing — no preventDefault, no
+    // postMessage. Cmd+C, Cmd+V, Cmd+P, Cmd+Shift+P, etc. fall through untouched.
     if (mod && (e.key === 'f' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
       e.preventDefault();
       parent.postMessage({ type: 'gossamer-key', key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey }, '*');
-    } else if (e.key === 'Escape') {
-      parent.postMessage({ type: 'gossamer-key', key: 'Escape' }, '*');
     }
-  }, true);
+  }, false);
 })();
 </script>
 `;

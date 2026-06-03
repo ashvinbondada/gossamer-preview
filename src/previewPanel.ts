@@ -13,13 +13,14 @@ export function showPreview(fsPath: string, previewUrl: string) {
     return;
   }
   const title = path.basename(fsPath);
+  const copyPath = vscode.workspace.asRelativePath(fsPath, false);
   const panel = vscode.window.createWebviewPanel(
     'gossamerPreview',
     title,
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
     { enableScripts: true, retainContextWhenHidden: true }
   );
-  panel.webview.html = buildHtml(previewUrl, title);
+  panel.webview.html = buildHtml(previewUrl, title, copyPath);
   panel.onDidDispose(() => panels.delete(fsPath));
   panels.set(fsPath, panel);
 }

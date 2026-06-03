@@ -5,60 +5,113 @@ export function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
-export function buildHtml(previewUrl: string, title: string): string {
-  const nonce = Math.random().toString(36).slice(2);
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>${escapeHtml(title)}</title>
-<style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-  body { display: flex; flex-direction: column; }
-  .toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #252526; border-bottom: 1px solid #333; flex-shrink: 0; }
-  .toolbar button { background: #2d2d30; color: #ccc; border: 1px solid #3c3c3c; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
-  .toolbar button:hover { background: #37373a; }
-  .toolbar button.active { background: #094771; border-color: #007acc; color: #fff; }
-  .toolbar .spacer { flex: 1; }
-  .toolbar .zoom-label { font-size: 11px; color: #888; min-width: 38px; text-align: center; }
-  .toolbar .url { font-size: 11px; color: #888; margin-left: 8px; user-select: text; }
-  .find { display: none; align-items: center; gap: 6px; padding: 4px 8px; background: #1e1e1e; border-bottom: 1px solid #333; }
-  .find.visible { display: flex; }
-  .find input { background: #2d2d30; color: #ccc; border: 1px solid #3c3c3c; border-radius: 3px; padding: 3px 6px; font-size: 12px; width: 200px; }
-  .find input:focus { outline: 1px solid #007acc; }
-  .find .count { font-size: 11px; color: #888; min-width: 50px; }
-  .frame-wrap { flex: 1; overflow: auto; background: white; }
-  iframe { width: 100%; height: 100%; border: none; display: block; transform-origin: 0 0; background: white; }
-</style>
-</head>
-<body>
-<div class="toolbar">
-  <button id="reload" title="Reload">⟳</button>
-  <button id="zoomOut" title="Zoom out (Cmd/Ctrl+-)">−</button>
-  <span class="zoom-label" id="zoomLabel">100%</span>
-  <button id="zoomIn" title="Zoom in (Cmd/Ctrl+=)">+</button>
-  <button id="zoomReset" title="Reset zoom (Cmd/Ctrl+0)">⟲</button>
-  <button id="findBtn" title="Find (Cmd/Ctrl+F)">⌕ Find</button>
-  <button id="editSrc" title="Edit HTML source">✎ Edit Source</button>
-  <span class="spacer"></span>
-  <span class="url">${escapeHtml(previewUrl)}</span>
-</div>
-<div class="find" id="findBar">
-  <input id="findInput" type="text" placeholder="Find in page" autocomplete="off" />
-  <span class="count" id="findCount">0 / 0</span>
-  <button id="findPrev" title="Previous (Shift+Enter)">▲</button>
-  <button id="findNext" title="Next (Enter)">▼</button>
-  <button id="findClose" title="Close (Esc)">✕</button>
-</div>
-<div class="frame-wrap" id="wrap">
+export function buildToolbarMarkup(previewUrl: string, title: string): string {
+  return `<div class="frame-wrap" id="wrap">
   <iframe id="frame" src="${escapeAttr(previewUrl)}"></iframe>
-</div>
-<script nonce="${nonce}">
-(function() {
+
+  <div class="toolbar" id="toolbar">
+    <div class="controls-left">
+      <button id="reload" title="Reload">⟳</button>
+      <button id="zoomOut" title="Zoom out (Cmd/Ctrl+-)">−</button>
+      <span class="zoom-label" id="zoomLabel">100%</span>
+      <button id="zoomIn" title="Zoom in (Cmd/Ctrl+=)">+</button>
+      <button id="zoomReset" title="Reset zoom (Cmd/Ctrl+0)">⟲</button>
+      <div class="divider"></div>
+    </div>
+
+    <button class="find-trigger" id="findBtn" title="Find (Cmd/Ctrl+F)">
+      <span>⌕</span>
+      <span class="label">Find</span>
+    </button>
+
+    <div class="find-area" id="findArea">
+      <input id="findInput" type="text" placeholder="Find in page" autocomplete="off" />
+      <span class="count" id="findCount">0 / 0</span>
+      <div class="nav-group">
+        <button class="icon-btn" id="findPrev" title="Previous (Shift+Enter)">▲</button>
+        <button class="icon-btn" id="findNext" title="Next (Enter)">▼</button>
+      </div>
+      <button class="close-btn" id="findClose" title="Close (Esc)">✕</button>
+
+      <div class="history" id="history">
+        <div class="history-header">
+          <span>Recent searches</span>
+          <button class="history-clear" id="historyClear">Clear</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+
+    <div class="controls-right">
+      <div class="divider"></div>
+      <button id="editSrc" title="Edit HTML source">✎ Edit</button>
+      <button id="copyFile" title="Copy relative path">
+        <span id="copyIcon">⎘</span>
+        <span id="copyLabel">${escapeHtml(title)}</span>
+      </button>
+    </div>
+  </div>
+</div>`;
+}
+
+// Internal dev-only flag. Hard-coded false for shipped builds. Flip to true
+// locally to reveal a perf-timing overlay in the webview (parent + iframe marks).
+// Not exposed as a setting — there's no user-facing toggle and no command for it.
+const PERF_OVERLAY_ENABLED = false;
+
+export function buildPreviewScript(title: string, copyPath?: string): string {
+  const toCopy = copyPath ?? title;
+  const perfHeader = PERF_OVERLAY_ENABLED ? `
+  // ===== PERF INSTRUMENTATION (dev-only, gated by PERF_OVERLAY_ENABLED) =====
+  var __PERF_T0 = performance.now();
+  var __PERF_MARKS = [];
+  function __mark(name) {
+    var t = performance.now() - __PERF_T0;
+    __PERF_MARKS.push({ name: name, t: t });
+    try { console.log('[gossamer-perf] ' + t.toFixed(1).padStart(7) + 'ms  ' + name); } catch (e) {}
+    __renderPerfOverlay();
+  }
+  function __renderPerfOverlay() {
+    var el = document.getElementById('__gossamer_perf');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__gossamer_perf';
+      el.style.cssText = 'position:fixed;bottom:8px;right:8px;z-index:99999;' +
+        'background:rgba(0,0,0,0.82);color:#0f0;font:11px/1.45 SF Mono,monospace;' +
+        'padding:8px 10px;border-radius:6px;border:1px solid #333;pointer-events:auto;' +
+        'max-width:340px;white-space:pre;cursor:pointer';
+      el.title = 'click to copy timings';
+      el.addEventListener('click', function() {
+        var text = __PERF_MARKS.map(function(m) { return m.t.toFixed(1) + 'ms\\t' + m.name; }).join('\\n');
+        try { navigator.clipboard && navigator.clipboard.writeText(text); } catch (e) {}
+        el.style.borderColor = '#0f0';
+        setTimeout(function() { el.style.borderColor = '#333'; }, 800);
+      });
+      document.body.appendChild(el);
+    }
+    var lines = ['[gossamer perf]'];
+    for (var i = 0; i < __PERF_MARKS.length; i++) {
+      lines.push(__PERF_MARKS[i].t.toFixed(1).padStart(7) + ' ms  ' + __PERF_MARKS[i].name);
+    }
+    el.textContent = lines.join('\\n');
+  }
+  __mark('script start (DOM ready)');
+  // ===== END PERF =====
+` : `
+  // Perf instrumentation disabled. __mark is a no-op so calls compile away cheaply.
+  function __mark() {}
+`;
+  return `(function() {
+${perfHeader}
   var frame = document.getElementById('frame');
   var wrap = document.getElementById('wrap');
+  var toolbar = document.getElementById('toolbar');
   var zoom = 1;
   var zoomLabel = document.getElementById('zoomLabel');
+  var FILENAME = ${JSON.stringify(title)};
+  var COPY_TARGET = ${JSON.stringify(toCopy)};
+
+  __mark('elements queried');
 
   function applyZoom() {
     frame.style.transform = 'scale(' + zoom + ')';
@@ -71,13 +124,34 @@ export function buildHtml(previewUrl: string, title: string): string {
   document.getElementById('zoomIn').onclick = function() { setZoom(zoom + 0.1); };
   document.getElementById('zoomOut').onclick = function() { setZoom(zoom - 0.1); };
   document.getElementById('zoomReset').onclick = function() { setZoom(1); };
-  document.getElementById('reload').onclick = function() { frame.contentWindow.location.reload(); };
+  document.getElementById('reload').onclick = function() { if (frame.contentWindow) frame.contentWindow.location.reload(); };
+
   var vscodeApi = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : null;
   var editSrcBtn = document.getElementById('editSrc');
-  editSrcBtn.onclick = function() {
-    if (vscodeApi) vscodeApi.postMessage({ type: 'editSource' });
+  editSrcBtn.onclick = function() { if (vscodeApi) vscodeApi.postMessage({ type: 'editSource' }); };
+
+  // copy filename
+  var copyBtn = document.getElementById('copyFile');
+  var copyIcon = document.getElementById('copyIcon');
+  var copyLabel = document.getElementById('copyLabel');
+  copyBtn.onclick = function() {
+    var done = function() {
+      copyIcon.textContent = '✓';
+      copyLabel.textContent = 'Copied';
+      setTimeout(function() { copyIcon.textContent = '⎘'; copyLabel.textContent = FILENAME; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(COPY_TARGET).then(done, done);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = COPY_TARGET; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
   };
 
+  // Edit source state from extension
   window.addEventListener('message', function(e) {
     var msg = e.data;
     if (msg && msg.type === 'editSourceState') {
@@ -86,64 +160,148 @@ export function buildHtml(previewUrl: string, title: string): string {
     }
   });
 
-  var findBar = document.getElementById('findBar');
+  // ===== Find =====
   var findInput = document.getElementById('findInput');
   var findCount = document.getElementById('findCount');
+  var findBtn = document.getElementById('findBtn');
+  var findClose = document.getElementById('findClose');
+  var findNext = document.getElementById('findNext');
+  var findPrev = document.getElementById('findPrev');
   var lastTotal = 0;
   var lastCurrent = 0;
   var findSeq = 0;
+  var lastAcceptedSeq = -1;
 
   function sendFind(query) {
     findSeq++;
-    if (frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'gossamer-find', query: query, seq: findSeq }, '*');
-    }
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'gossamer-find', query: query, seq: findSeq }, '*');
   }
   function sendNav(direction) {
     findSeq++;
-    if (frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'gossamer-find-nav', direction: direction, seq: findSeq }, '*');
-    }
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'gossamer-find-nav', direction: direction, seq: findSeq }, '*');
   }
   function sendClear() {
-    if (frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'gossamer-find-clear' }, '*');
-    }
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'gossamer-find-clear' }, '*');
   }
+  function updateCount() { findCount.textContent = lastCurrent + ' / ' + lastTotal; }
 
-  function updateCount() {
-    findCount.textContent = lastCurrent + ' / ' + lastTotal;
+  // ===== history (session-local, in-memory) =====
+  var historyEl = document.getElementById('history');
+  var historyList = document.getElementById('historyList');
+  var historyClear = document.getElementById('historyClear');
+  var history = [];
+  var historyIndex = -1;
+
+  function renderHistory() {
+    historyList.innerHTML = '';
+    if (history.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = 'No searches yet';
+      historyList.appendChild(empty);
+      return;
+    }
+    history.forEach(function(q, i) {
+      var row = document.createElement('div');
+      row.className = 'history-item' + (i === historyIndex ? ' active' : '');
+      var ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = '⌕';
+      var tx = document.createElement('span'); tx.className = 'text'; tx.textContent = q;
+      row.appendChild(ic); row.appendChild(tx);
+      row.addEventListener('mousedown', function(e) { e.preventDefault(); applyHistory(i); });
+      historyList.appendChild(row);
+    });
   }
+  function showHistory() { renderHistory(); historyEl.classList.add('visible'); }
+  function hideHistory() { historyEl.classList.remove('visible'); historyIndex = -1; }
+  function applyHistory(i) {
+    if (i < 0 || i >= history.length) return;
+    historyIndex = i;
+    findInput.value = history[i];
+    sendFind(findInput.value);
+    hideHistory();
+  }
+  function pushHistory(q) {
+    if (!q) return;
+    history = history.filter(function(h) { return h !== q; });
+    history.unshift(q);
+    if (history.length > 20) history.length = 20;
+  }
+  historyClear.addEventListener('click', function(e) { e.preventDefault(); history = []; renderHistory(); });
 
   function openFind() {
-    findBar.classList.add('visible');
-    findInput.focus();
-    findInput.select();
+    toolbar.classList.add('open');
+    setTimeout(function() { findInput.focus(); findInput.select(); showHistory(); }, 80);
   }
-  function closeFind() {
-    findBar.classList.remove('visible');
+  function clearInput() {
+    findInput.value = '';
     sendClear();
     lastTotal = 0; lastCurrent = 0;
     updateCount();
+    showHistory();
+    findInput.focus();
+  }
+  function closeFind() {
+    if (findInput.value) pushHistory(findInput.value);
+    toolbar.classList.remove('open');
     findInput.value = '';
+    sendClear();
+    lastTotal = 0; lastCurrent = 0;
+    lastAcceptedSeq = -1;
+    updateCount();
+    hideHistory();
   }
 
-  document.getElementById('findBtn').onclick = openFind;
-  document.getElementById('findClose').onclick = closeFind;
-  document.getElementById('findNext').onclick = function() { sendNav(1); };
-  document.getElementById('findPrev').onclick = function() { sendNav(-1); };
+  findBtn.onclick = function() { toolbar.classList.contains('open') ? closeFind() : openFind(); };
+  findClose.onclick = closeFind;
+  findNext.onclick = function() { sendNav(1); };
+  findPrev.onclick = function() { sendNav(-1); };
 
-  findInput.addEventListener('input', function() { sendFind(findInput.value); });
+  findInput.addEventListener('input', function() {
+    historyIndex = -1;
+    var v = findInput.value;
+    if (v) { hideHistory(); sendFind(v); }
+    else { sendClear(); lastTotal = 0; lastCurrent = 0; updateCount(); showHistory(); }
+  });
+  findInput.addEventListener('focus', function() { if (!findInput.value) showHistory(); });
+  document.addEventListener('mousedown', function(e) {
+    if (!historyEl.contains(e.target) && e.target !== findInput) hideHistory();
+  });
+
   findInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); sendNav(e.shiftKey ? -1 : 1); }
-    else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+    var histVisible = historyEl.classList.contains('visible') && history.length > 0;
+    if (e.key === 'ArrowDown' && histVisible) {
+      e.preventDefault();
+      historyIndex = Math.min(history.length - 1, historyIndex + 1);
+      renderHistory();
+      return;
+    }
+    if (e.key === 'ArrowUp' && histVisible) {
+      e.preventDefault();
+      historyIndex = Math.max(-1, historyIndex - 1);
+      renderHistory();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (histVisible && historyIndex >= 0) { applyHistory(historyIndex); return; }
+      sendNav(e.shiftKey ? -1 : 1);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (findInput.value) clearInput();
+      else closeFind();
+      return;
+    }
   });
 
   window.addEventListener('message', function(e) {
     var msg = e.data;
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'gossamer-find-result') {
-      if (msg.seq && msg.seq < findSeq) return;
+      // Drop strictly-older replies than the last one we accepted.
+      if (typeof msg.seq === 'number' && msg.seq < lastAcceptedSeq) return;
+      if (typeof msg.seq === 'number') lastAcceptedSeq = msg.seq;
       lastTotal = msg.total || 0;
       lastCurrent = msg.current || 0;
       updateCount();
@@ -155,25 +313,262 @@ export function buildHtml(previewUrl: string, title: string): string {
         shiftKey: !!msg.shiftKey,
         preventDefault: function() {}
       });
+    } else if (msg.type === 'gossamer-perf') {
+      // Iframe sends perf timestamps in its own performance.now() reference frame.
+      // Display relative to parent's __PERF_T0 so all marks are comparable.
+      __mark('[iframe] ' + msg.name);
     }
   });
 
   function handleKey(e) {
     var mod = e.metaKey || e.ctrlKey;
+    // Early-return for anything we don't handle so VS Code's host can still forward
+    // chords like Cmd+P / Cmd+Shift+P that share the modifier.
+    var isOurKey =
+      (mod && (e.key === 'f' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) ||
+      (e.key === 'Escape' && toolbar.classList.contains('open'));
+    if (!isOurKey) return;
+
     if (mod && e.key === 'f') { e.preventDefault(); openFind(); }
     else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom(zoom + 0.1); }
     else if (mod && e.key === '-') { e.preventDefault(); setZoom(zoom - 0.1); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
-    else if (e.key === 'Escape' && findBar.classList.contains('visible')) { e.preventDefault(); closeFind(); }
-  }
-  document.addEventListener('keydown', handleKey, true);
-  // On iframe navigation, re-run the active query so highlights persist across reloads.
-  frame.addEventListener('load', function() {
-    if (findBar.classList.contains('visible') && findInput.value) {
-      sendFind(findInput.value);
+    else if (e.key === 'Escape' && toolbar.classList.contains('open')) {
+      // If the find input itself originated this event, let its own handler deal with it.
+      if (e.target === findInput) return;
+      e.preventDefault();
+      if (findInput.value) clearInput();
+      else closeFind();
     }
-  });
-})();
+  }
+  // Bubble phase (not capture) on document. handleKey strictly early-returns for
+  // any key not in our allowlist, and only preventDefaults the six we handle.
+  // This matches v2.0.4's working behavior (which used capture but didn't actually
+  // wire the iframe-side listener due to a cross-origin bug).
+  document.addEventListener('keydown', handleKey, false);
+
+  if (frame && frame.addEventListener) {
+    __mark('iframe load listener attached');
+    frame.addEventListener('load', function() {
+      __mark('iframe LOAD fired');
+      // Reach into the iframe and wait for its DOMContentLoaded + first paint if possible.
+      try {
+        var fdoc = frame.contentDocument;
+        if (fdoc) __mark('iframe contentDocument readyState=' + fdoc.readyState);
+      } catch (e) { __mark('iframe cross-origin (expected)'); }
+      if (toolbar.classList.contains('open') && findInput.value) sendFind(findInput.value);
+    });
+  }
+
+  var dimTimer = null;
+  var wakeTimer = null;
+  var WAKE_SWEEP_MS = 750;
+  function bumpToolbar() {
+    // Only play the warm sweep when waking from an already-dimmed state.
+    // The initial call from page load skips this because .dimmed isn't set yet.
+    var wasDimmed = toolbar.classList.contains('dimmed');
+    toolbar.classList.remove('dimmed');
+    if (wasDimmed) {
+      // Restart the animation cleanly if the user re-wakes mid-sweep.
+      toolbar.classList.remove('waking');
+      // Force reflow so the re-added class restarts the keyframes.
+      void toolbar.offsetWidth;
+      toolbar.classList.add('waking');
+      if (wakeTimer) clearTimeout(wakeTimer);
+      wakeTimer = setTimeout(function() { toolbar.classList.remove('waking'); }, WAKE_SWEEP_MS);
+    }
+    if (dimTimer) clearTimeout(dimTimer);
+    dimTimer = setTimeout(function() {
+      if (!toolbar.classList.contains('open')) toolbar.classList.add('dimmed');
+    }, 2200);
+  }
+  if (wrap && wrap.addEventListener) {
+    wrap.addEventListener('mousemove', bumpToolbar);
+    toolbar.addEventListener('mouseenter', function() { toolbar.classList.remove('dimmed'); if (dimTimer) clearTimeout(dimTimer); });
+    toolbar.addEventListener('mouseleave', bumpToolbar);
+  }
+  bumpToolbar();
+  __mark('script init done');
+
+  // Capture browser-level navigation timing once available.
+  setTimeout(function() {
+    try {
+      var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || performance.timing || null;
+      if (nav && nav.responseEnd != null) {
+        __mark('nav.responseEnd=' + (nav.responseEnd|0) + ' domInteractive=' + (nav.domInteractive|0) + ' domComplete=' + (nav.domComplete|0));
+      }
+    } catch (e) {}
+  }, 0);
+
+  // Window onload (after iframe and all subresources).
+  window.addEventListener('load', function() { __mark('window LOAD (everything done)'); });
+})();`;
+}
+
+export const PREVIEW_STYLES = `
+  html, body { margin: 0; padding: 0; height: 100%; background: #0d0d0f; color: #e6e6e6; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  .frame-wrap { position: relative; flex: 1; overflow: auto; background: white; }
+  iframe { width: 100%; height: 100%; border: none; display: block; transform-origin: 0 0; background: white; }
+
+  .toolbar {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(20,20,22,0.78);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    display: flex; align-items: center;
+    padding: 4px;
+    overflow: visible;
+    width: auto;
+    transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+    will-change: width;
+    max-width: calc(100% - 32px);
+    opacity: 1;
+  }
+  .toolbar.dimmed { opacity: 0.25; }
+  .toolbar.open { width: min(640px, calc(100% - 32px)); }
+
+  /* Warm orange→black sweep that plays once when the toolbar wakes from idle. */
+  .toolbar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      90deg,
+      rgba(255,140,60,0) 0%,
+      rgba(255,140,60,0.55) 50%,
+      rgba(20,20,22,0) 100%
+    );
+    transform: translateX(-100%);
+    clip-path: inset(0 round 999px);
+    will-change: transform, opacity;
+  }
+  .toolbar.waking::before {
+    animation: toolbar-wake-sweep 750ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+  }
+  @keyframes toolbar-wake-sweep {
+    0%   { transform: translateX(-100%); opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { transform: translateX(100%); opacity: 0; }
+  }
+
+  .toolbar button {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 100ms ease;
+    font-family: inherit;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,0.1); }
+  .toolbar button.active { background: rgba(124,158,255,0.18); color: #fff; }
+  .toolbar .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .toolbar .divider { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; flex-shrink: 0; }
+
+  .controls-left, .controls-right { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
+  .find-trigger {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0; white-space: nowrap;
+    font-family: inherit;
+  }
+  .find-trigger:hover { background: rgba(255,255,255,0.1); }
+  .toolbar.open .find-trigger { padding: 6px 8px; }
+  .toolbar.open .find-trigger .label { display: none; }
+
+  .find-area {
+    position: relative;
+    display: inline-flex; align-items: center;
+    width: 0; overflow: hidden;
+    opacity: 0;
+    flex: 1;
+    transition: opacity 200ms ease 120ms, width 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    margin: 0;
+  }
+  .toolbar.open .find-area { width: 100%; opacity: 1; margin: 0 4px; }
+  .find-area input {
+    background: transparent;
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    caret-color: #fff;
+    border: none; outline: none;
+    font-family: inherit; font-size: 13.5px;
+    flex: 1 1 auto;
+    min-width: 140px;
+    padding: 6px 8px;
+  }
+  .find-area input::placeholder { color: #8a8a93; opacity: 1; }
+  .find-area .count { color: #b0b0b8; font-size: 11.5px; padding: 0 10px; font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; flex-shrink: 0; }
+  .find-area .nav-group { display: inline-flex; gap: 2px; flex-shrink: 0; }
+  .find-area .icon-btn { padding: 6px 10px; }
+  .find-area .close-btn { padding: 6px 10px; }
+
+  .history {
+    position: absolute; top: 100%; margin-top: 8px;
+    left: 0; right: 0;
+    background: rgba(20,20,22,0.94);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    padding: 6px;
+    display: none;
+    z-index: 11;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .history.visible { display: block; }
+  .history-header {
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 6px 12px 4px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .history-clear {
+    background: transparent; border: none; color: #6a6a72; cursor: pointer;
+    font-size: 10.5px; padding: 2px 6px; border-radius: 4px;
+    font-family: inherit; text-transform: none; letter-spacing: 0;
+  }
+  .history-clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+  .history-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .history-item .ic { color: #6a6a72; font-size: 12px; }
+  .history-item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item:hover, .history-item.active { background: rgba(255,255,255,0.07); }
+  .history-item.active { background: rgba(124,158,255,0.14); }
+  .history-empty { color: #6a6a72; font-size: 12px; padding: 14px 12px; text-align: center; font-style: italic; }
+`;
+
+
+export function buildHtml(previewUrl: string, title: string, copyPath?: string): string {
+  const nonce = Math.random().toString(36).slice(2);
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(title)}</title>
+<style>${PREVIEW_STYLES}</style>
+</head>
+<body>
+${buildToolbarMarkup(previewUrl, title)}
+<script nonce="${nonce}">
+${buildPreviewScript(title, copyPath)}
 </script>
 </body>
 </html>`;

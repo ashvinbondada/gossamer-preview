@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Gossamer Find placements — floating glass</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0d0d0f; color: #e6e6e6; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 40px 32px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: #8a8a93; font-size: 13px; margin-bottom: 36px; }
+
+  .specimen { margin-bottom: 56px; }
+  .specimen-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .specimen-title { font-size: 15px; font-weight: 600; }
+  .specimen-tag { font-size: 11px; color: #8a8a93; text-transform: uppercase; letter-spacing: 0.08em; }
+  .specimen-desc { font-size: 13px; color: #8a8a93; margin-bottom: 14px; line-height: 1.55; max-width: 760px; }
+
+  .frame {
+    position: relative;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #232328;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    height: 360px;
+  }
+  .frame .body {
+    position: absolute; inset: 0;
+    padding: 56px 64px;
+    background: linear-gradient(180deg, #f8f8fa 0%, #fff 100%);
+    color: #333;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow: auto;
+  }
+  .body h2 { font-size: 20px; margin: 0 0 14px; color: #111; }
+  .body p { margin: 0 0 12px; }
+  mark { background: #ffd54f; color: #000; border-radius: 2px; padding: 0 1px; }
+  mark.active { background: #ff9800; color: #000; }
+
+  /* ============ shared floating-glass pill ============ */
+  .glass-pill {
+    background: rgba(20,20,22,0.78);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    display: inline-flex;
+    align-items: center;
+    padding: 4px;
+    gap: 2px;
+  }
+  .glass-pill button {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 100ms ease;
+    font-family: inherit;
+  }
+  .glass-pill button:hover { background: rgba(255,255,255,0.1); }
+  .glass-pill .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+  .glass-pill input {
+    background: transparent; color: #fff; border: none; outline: none;
+    font-family: inherit; font-size: 13px; padding: 6px 10px; width: 180px;
+  }
+  .glass-pill input::placeholder { color: #6a6a72; }
+  .glass-pill .count { color: #b0b0b8; font-size: 11.5px; padding: 0 8px; font-variant-numeric: tabular-nums; min-width: 50px; text-align: center; }
+  .glass-pill .divider { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; }
+
+  /* main toolbar position: top center */
+  .toolbar {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 10;
+  }
+  /* sub-pill positions per variant */
+  .find-below { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 10; }
+  .find-tr { position: absolute; top: 12px; right: 16px; z-index: 10; }
+
+  /* state visibility */
+  .hidden { display: none !important; }
+
+  /* tab switcher */
+  .tabs { display: inline-flex; background: #16161a; border: 1px solid #232328; border-radius: 999px; padding: 3px; margin-bottom: 14px; gap: 2px; }
+  .tabs button { background: transparent; color: #8a8a93; border: none; padding: 6px 14px; font-size: 12px; border-radius: 999px; cursor: pointer; font-family: inherit; }
+  .tabs button.active { background: #2a2a30; color: #fff; }
+
+  /* Variant D: "smart center" - toolbar shifts to make room */
+  .smart-row { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: inline-flex; gap: 8px; z-index: 10; align-items: center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Floating glass — Find placements</h1>
+  <p class="sub">Click <kbd style="background:#16161a;border:1px solid #232328;border-radius:4px;padding:1px 6px;font-size:11px;">⌕ Find</kbd> on each toolbar to see the variant in action. Type "lorem" to see matches. Esc to close.</p>
+
+  <!-- VARIANT 1: INLINE EXPAND -->
+  <div class="specimen" id="v1">
+    <div class="specimen-header">
+      <div class="specimen-title">1 · Inline expand</div>
+      <div class="specimen-tag">single pill stretches</div>
+    </div>
+    <div class="specimen-desc">The toolbar pill morphs — controls collapse to icons, the input slides in from the middle, prev/next/close appear on the right. One floating element, one focal point.</div>
+    <div class="frame">
+      <div class="glass-pill toolbar" data-variant="inline">
+        <div class="default-view">
+          <button>⟳</button>
+          <button>−</button>
+          <span class="zoom-label">100%</span>
+          <button>+</button>
+          <button class="open-find">⌕ Find</button>
+          <button>✎ Edit</button>
+        </div>
+        <div class="find-view hidden">
+          <button>⌕</button>
+          <input type="text" placeholder="Find in page" />
+          <span class="count">0 / 0</span>
+          <button>▲</button>
+          <button>▼</button>
+          <div class="divider"></div>
+          <button class="close-find">✕</button>
+        </div>
+      </div>
+      <div class="body" data-body>
+        <h2>Lorem ipsum demo</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor.</p>
+        <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        <p>Lorem again, and another lorem here, plus one more lorem at the end.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT 2: STACKED PILL BELOW -->
+  <div class="specimen" id="v2">
+    <div class="specimen-header">
+      <div class="specimen-title">2 · Stacked pill below</div>
+      <div class="specimen-tag">two floating pills</div>
+    </div>
+    <div class="specimen-desc">Toolbar stays put; a second pill drops in beneath it with the find input. Clear mode signal — you can see "I'm in find mode" because there are visibly two things. Toolbar buttons remain reachable.</div>
+    <div class="frame">
+      <div class="glass-pill toolbar" data-variant="stacked">
+        <button>⟳</button>
+        <button>−</button>
+        <span class="zoom-label">100%</span>
+        <button>+</button>
+        <button class="open-find">⌕ Find</button>
+        <button>✎ Edit</button>
+      </div>
+      <div class="glass-pill find-below hidden">
+        <input type="text" placeholder="Find in page" />
+        <span class="count">0 / 0</span>
+        <button>▲</button>
+        <button>▼</button>
+        <div class="divider"></div>
+        <button class="close-find">✕</button>
+      </div>
+      <div class="body" data-body>
+        <h2>Lorem ipsum demo</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor.</p>
+        <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        <p>Lorem again, and another lorem here, plus one more lorem at the end.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT 3: REPLACES TOOLBAR -->
+  <div class="specimen" id="v3">
+    <div class="specimen-header">
+      <div class="specimen-title">3 · Replaces toolbar entirely</div>
+      <div class="specimen-tag">mode swap</div>
+    </div>
+    <div class="specimen-desc">The pill itself becomes the find bar. Same position, same shape — just different contents. Most minimal. Slight loss of context (you can't see zoom/edit while finding).</div>
+    <div class="frame">
+      <div class="glass-pill toolbar" data-variant="replace">
+        <div class="default-view">
+          <button>⟳</button>
+          <button>−</button>
+          <span class="zoom-label">100%</span>
+          <button>+</button>
+          <button class="open-find">⌕ Find</button>
+          <button>✎ Edit</button>
+        </div>
+        <div class="find-view hidden">
+          <input type="text" placeholder="Find in page" />
+          <span class="count">0 / 0</span>
+          <button>▲</button>
+          <button>▼</button>
+          <div class="divider"></div>
+          <button class="close-find">✕ Back</button>
+        </div>
+      </div>
+      <div class="body" data-body>
+        <h2>Lorem ipsum demo</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor.</p>
+        <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        <p>Lorem again, and another lorem here, plus one more lorem at the end.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT 4: TOP-RIGHT FIND -->
+  <div class="specimen" id="v4">
+    <div class="specimen-header">
+      <div class="specimen-title">4 · Find pill in top-right</div>
+      <div class="specimen-tag">browser-like</div>
+    </div>
+    <div class="specimen-desc">Find gets its own dedicated corner, like Chrome/Safari. Toolbar untouched, find lives independently in the top-right. Two floating elements that never interact.</div>
+    <div class="frame">
+      <div class="glass-pill toolbar" data-variant="topright">
+        <button>⟳</button>
+        <button>−</button>
+        <span class="zoom-label">100%</span>
+        <button>+</button>
+        <button class="open-find">⌕ Find</button>
+        <button>✎ Edit</button>
+      </div>
+      <div class="glass-pill find-tr hidden">
+        <input type="text" placeholder="Find in page" />
+        <span class="count">0 / 0</span>
+        <button>▲</button>
+        <button>▼</button>
+        <div class="divider"></div>
+        <button class="close-find">✕</button>
+      </div>
+      <div class="body" data-body>
+        <h2>Lorem ipsum demo</h2>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor.</p>
+        <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        <p>Lorem again, and another lorem here, plus one more lorem at the end.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top: 40px;">Try them all. Tell me which feels right — or describe what to change.</p>
+</div>
+
+<script>
+function wireSpecimen(specimen) {
+  const variant = specimen.querySelector('[data-variant]').getAttribute('data-variant');
+  const toolbar = specimen.querySelector('.toolbar');
+  const body = specimen.querySelector('[data-body]');
+  const originalHtml = body.innerHTML;
+
+  let findPill, defaultView, findView, input, count;
+
+  if (variant === 'inline' || variant === 'replace') {
+    defaultView = toolbar.querySelector('.default-view');
+    findView = toolbar.querySelector('.find-view');
+    input = findView.querySelector('input');
+    count = findView.querySelector('.count');
+  } else {
+    findPill = specimen.querySelector('.find-below, .find-tr');
+    input = findPill.querySelector('input');
+    count = findPill.querySelector('.count');
+  }
+
+  function open() {
+    if (defaultView) { defaultView.classList.add('hidden'); findView.classList.remove('hidden'); }
+    else { findPill.classList.remove('hidden'); }
+    input.focus(); input.value = ''; runSearch('');
+  }
+  function close() {
+    if (defaultView) { findView.classList.add('hidden'); defaultView.classList.remove('hidden'); }
+    else { findPill.classList.add('hidden'); }
+    body.innerHTML = originalHtml;
+    count.textContent = '0 / 0';
+  }
+
+  toolbar.querySelector('.open-find').addEventListener('click', open);
+
+  // close buttons (inside whichever pill holds the find UI)
+  const closeBtns = specimen.querySelectorAll('.close-find');
+  closeBtns.forEach(b => b.addEventListener('click', close));
+
+  function runSearch(query) {
+    body.innerHTML = originalHtml;
+    if (!query) { count.textContent = '0 / 0'; return; }
+    const q = query.toLowerCase();
+    let total = 0;
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+    });
+    const nodes = [];
+    let n; while ((n = walker.nextNode())) nodes.push(n);
+    nodes.forEach(node => {
+      const text = node.nodeValue;
+      const lower = text.toLowerCase();
+      let idx = lower.indexOf(q);
+      if (idx < 0) return;
+      const frag = document.createDocumentFragment();
+      let cursor = 0;
+      while (idx >= 0) {
+        if (idx > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        const m = document.createElement('mark');
+        if (total === 0) m.classList.add('active');
+        m.textContent = text.slice(idx, idx + q.length);
+        frag.appendChild(m);
+        total++;
+        cursor = idx + q.length;
+        idx = lower.indexOf(q, cursor);
+      }
+      if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+      node.parentNode.replaceChild(frag, node);
+    });
+    count.textContent = (total ? 1 : 0) + ' / ' + total;
+  }
+
+  input.addEventListener('input', e => runSearch(e.target.value));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+}
+
+document.querySelectorAll('.specimen').forEach(wireSpecimen);
+</script>
+</body>
+</html>

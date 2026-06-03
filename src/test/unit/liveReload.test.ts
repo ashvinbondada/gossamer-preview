@@ -93,37 +93,8 @@ describe('injectReloadScript', () => {
     assert.ok(out.includes('<script>'));
   });
 
-  it('includes ws connect to location.pathname', () => {
-    const out = injectReloadScript('<body></body>');
-    assert.ok(out.includes("ws://"));
-    assert.ok(out.includes('location.pathname'));
-  });
-
-  it('reloads on receiving "reload" message', () => {
-    const out = injectReloadScript('<body></body>');
-    assert.ok(out.includes("e.data === 'reload'"));
-    assert.ok(out.includes('location.reload()'));
-  });
-
-  it('reconnects on close', () => {
-    const out = injectReloadScript('<body></body>');
-    assert.ok(out.includes('ws.onclose'));
-  });
-
-  it('injects find helper that walks text nodes and skips script/style', () => {
-    const out = injectReloadScript('<body></body>');
-    assert.ok(out.includes('SHOW_TEXT'));
-    assert.ok(out.includes("'SCRIPT'"));
-    assert.ok(out.includes("'STYLE'"));
-    assert.ok(out.includes("'gossamer-find'"));
-  });
-
-  it('forwards Cmd/Ctrl+F keydown to parent', () => {
-    const out = injectReloadScript('<body></body>');
-    assert.ok(out.includes("'gossamer-key'"));
-    assert.ok(out.includes('metaKey'));
-    assert.ok(out.includes("'f'"));
-  });
+  // Behavioral coverage for the WS reload client and find helper lives in liveReload.dom.test.ts.
+  // These two tests only guard the placement contract of injectReloadScript itself.
 });
 
 describe('LiveReloadServer HTTP', () => {

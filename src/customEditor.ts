@@ -16,7 +16,8 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
   ): void {
     panel.webview.options = { enableScripts: true };
     const previewUrl = this.getPreviewUrl(document.uri.fsPath);
-    panel.webview.html = buildHtml(previewUrl, path.basename(document.uri.fsPath));
+    const copyPath = vscode.workspace.asRelativePath(document.uri.fsPath, false);
+    panel.webview.html = buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
 
     let sourceEditorOpen = false;
 

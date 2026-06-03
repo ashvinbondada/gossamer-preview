@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Gossamer toolbar — aesthetic explorations</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --panel: #151518;
+    --text: #e6e6e6;
+    --muted: #8a8a93;
+    --border: #232328;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 40px 32px 80px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 36px; }
+
+  .specimen { margin-bottom: 56px; }
+  .specimen-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .specimen-title { font-size: 15px; font-weight: 600; }
+  .specimen-tag { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .specimen-desc { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.55; max-width: 720px; }
+
+  .frame {
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .frame .body {
+    height: 240px;
+    background: linear-gradient(180deg, #f8f8fa 0%, #fff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #aaa;
+    font-size: 13px;
+  }
+
+  /* ==================== CURRENT (baseline) ==================== */
+  .tb-current {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; background: #252526; border-bottom: 1px solid #333;
+    font-size: 12px;
+  }
+  .tb-current button {
+    background: #2d2d30; color: #ccc; border: 1px solid #3c3c3c;
+    border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;
+  }
+  .tb-current button:hover { background: #37373a; }
+  .tb-current .spacer { flex: 1; }
+  .tb-current .zoom { font-size: 11px; color: #888; min-width: 38px; text-align: center; }
+  .tb-current .url { font-size: 11px; color: #888; }
+
+  /* ==================== A: GLASS / CLAUDE ==================== */
+  .glass-shell {
+    background: radial-gradient(120% 80% at 0% 0%, #2a2329 0%, #1a1518 50%, #14110f 100%);
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px);
+  }
+  .glass-bar {
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 4px 6px;
+    backdrop-filter: blur(8px);
+  }
+  .glass-bar button {
+    background: transparent; color: #e8e3dc; border: none;
+    border-radius: 999px; padding: 6px 12px; cursor: pointer;
+    font-size: 12.5px; font-weight: 500;
+    transition: background 120ms ease;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .glass-bar button:hover { background: rgba(255,255,255,0.08); }
+  .glass-bar button.icon-only { padding: 6px 8px; color: #b9b2a8; }
+  .glass-bar .divider { width: 1px; height: 18px; background: rgba(255,255,255,0.08); margin: 0 4px; }
+  .glass-bar .spacer { flex: 1; }
+  .glass-bar .zoom-pill { display: inline-flex; align-items: center; gap: 2px; background: rgba(255,255,255,0.04); border-radius: 999px; padding: 2px; }
+  .glass-bar .zoom-pill button { padding: 4px 8px; font-size: 12px; }
+  .glass-bar .zoom-label { font-size: 11px; color: #b9b2a8; padding: 0 8px; min-width: 36px; text-align: center; font-variant-numeric: tabular-nums; }
+  .glass-bar .url { font-size: 11.5px; color: #a89e90; font-family: 'SF Mono', 'JetBrains Mono', monospace; padding: 0 10px; }
+
+  /* ==================== B: TERMINAL / LINEAR ==================== */
+  .term-bar {
+    display: flex; align-items: center; gap: 8px;
+    background: #0e0e10;
+    border-bottom: 1px solid #1f1f23;
+    padding: 6px 10px;
+    font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .term-bar button {
+    background: #15151a; color: #c4c4cc; border: 1px solid #25252b;
+    border-radius: 4px; padding: 4px 9px; cursor: pointer;
+    font-family: inherit; font-size: 11.5px;
+    letter-spacing: 0.01em;
+    transition: all 100ms ease;
+  }
+  .term-bar button:hover { background: #1c1c22; border-color: #34343c; color: #fff; }
+  .term-bar button.accent { color: #7c9eff; border-color: #2a3556; }
+  .term-bar button.accent:hover { background: #1a2238; border-color: #3a4a82; }
+  .term-bar .group { display: inline-flex; gap: 0; }
+  .term-bar .group button { border-radius: 0; border-right-width: 0; }
+  .term-bar .group button:first-child { border-radius: 4px 0 0 4px; }
+  .term-bar .group button:last-child { border-radius: 0 4px 4px 0; border-right-width: 1px; }
+  .term-bar .zoom-label { color: #6a6a72; padding: 0 8px; font-variant-numeric: tabular-nums; }
+  .term-bar .spacer { flex: 1; }
+  .term-bar .url { color: #6a6a72; font-size: 11.5px; }
+  .term-bar .url .scheme { color: #4a4a52; }
+  .term-bar .url .host { color: #8a8a92; }
+  .term-bar .url .path { color: #c4c4cc; }
+  .term-bar .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+
+  /* ==================== C: GRADIENT ACCENT / V0 ==================== */
+  .grad-bar {
+    display: flex; align-items: center; gap: 6px;
+    background: #0a0a0a; border-bottom: 1px solid #1a1a1a;
+    padding: 7px 10px;
+    font-size: 12.5px;
+  }
+  .grad-bar button {
+    background: #141414; color: #d4d4d4; border: 1px solid #262626;
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+    transition: all 120ms ease;
+  }
+  .grad-bar button:hover { background: #1c1c1c; border-color: #383838; }
+  .grad-bar button.gradient-btn {
+    position: relative;
+    background: #141414;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    color: #fff;
+    font-weight: 500;
+  }
+  .grad-bar button.gradient-btn::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 6px;
+    padding: 1px;
+    background: linear-gradient(135deg, #ff7e5f 0%, #d946ef 50%, #7c3aed 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    pointer-events: none;
+  }
+  .grad-bar button.gradient-btn:hover { background: #1c1c1c; }
+  .grad-bar .zoom-label { font-size: 11px; color: #707070; min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; }
+  .grad-bar .spacer { flex: 1; }
+  .grad-bar .url { font-size: 11.5px; color: #707070; font-family: 'SF Mono', monospace; }
+  .grad-bar .url .accent-dot { color: #d946ef; }
+
+  /* ==================== D: MINIMAL / FLOATING (bonus) ==================== */
+  .min-shell {
+    position: relative; background: #fff; height: 280px; overflow: hidden;
+  }
+  .min-shell .body { height: 100%; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 13px; background: linear-gradient(180deg, #f8f8fa 0%, #fff 100%); }
+  .min-bar {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 2px;
+    background: rgba(20,20,22,0.78);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    opacity: 0.35; transition: opacity 180ms ease;
+  }
+  .min-shell:hover .min-bar { opacity: 1; }
+  .min-bar button {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 100ms ease;
+  }
+  .min-bar button:hover { background: rgba(255,255,255,0.1); }
+  .min-bar .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+  .min-hint { position: absolute; bottom: 14px; right: 16px; font-size: 11px; color: #bbb; }
+
+  /* shared icon font fallback */
+  .ic { font-family: -apple-system, sans-serif; }
+
+  .key { font-size: 10px; color: var(--muted); margin-top: 6px; }
+  details { margin-top: 12px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details pre { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-size: 11.5px; overflow: auto; color: #d4d4d8; }
+
+  .pick {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #1a1a1f; border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; margin-top: 10px;
+  }
+  .pick:hover { background: #232328; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Gossamer toolbar — aesthetic explorations</h1>
+  <p class="sub">Hover and click — these are live HTML, not screenshots. Each shows the same controls (reload, zoom, find, edit source, url) in a different visual treatment.</p>
+
+  <!-- BASELINE -->
+  <div class="specimen">
+    <div class="specimen-header">
+      <div class="specimen-title">0 · Current</div>
+      <div class="specimen-tag">baseline · shipped today</div>
+    </div>
+    <div class="specimen-desc">What's in 2.0.4 right now. Generic VS Code chrome — functional, forgettable.</div>
+    <div class="frame">
+      <div class="tb-current">
+        <button>⟳</button>
+        <button>−</button>
+        <span class="zoom">100%</span>
+        <button>+</button>
+        <button>⟲</button>
+        <button>⌕ Find</button>
+        <button>✎ Edit Source</button>
+        <span class="spacer"></span>
+        <span class="url">http://localhost:7654/foo.html</span>
+      </div>
+      <div class="body">preview area</div>
+    </div>
+  </div>
+
+  <!-- A: GLASS -->
+  <div class="specimen">
+    <div class="specimen-header">
+      <div class="specimen-title">A · Glass</div>
+      <div class="specimen-tag">Claude / artifacts vibe</div>
+    </div>
+    <div class="specimen-desc">Soft translucent pill bar floating on a warm dark gradient. Controls feel weightless. Mono URL gives a technical anchor without coldness. Pairs naturally with Cursor's dark theme.</div>
+    <div class="frame">
+      <div class="glass-shell">
+        <div class="glass-bar">
+          <button class="icon-only" title="Reload">⟳</button>
+          <div class="divider"></div>
+          <div class="zoom-pill">
+            <button>−</button>
+            <span class="zoom-label">100%</span>
+            <button>+</button>
+          </div>
+          <div class="divider"></div>
+          <button>⌕ Find</button>
+          <button>✎ Edit source</button>
+          <span class="spacer"></span>
+          <span class="url">foo.html</span>
+        </div>
+      </div>
+      <div class="body">preview area</div>
+    </div>
+    <button class="pick" data-pick="A">Pick A</button>
+  </div>
+
+  <!-- B: TERMINAL -->
+  <div class="specimen">
+    <div class="specimen-header">
+      <div class="specimen-title">B · Terminal</div>
+      <div class="specimen-tag">Linear / engineering precision</div>
+    </div>
+    <div class="specimen-desc">Mono everywhere, tighter spacing, segmented button groups for zoom. Live status dot signals the WebSocket is connected. Reads as "this thing knows what it's doing."</div>
+    <div class="frame">
+      <div class="term-bar">
+        <button>⟳ reload</button>
+        <div class="group">
+          <button>−</button>
+          <button style="border-left-width:0;">+</button>
+        </div>
+        <span class="zoom-label">100%</span>
+        <button class="accent">⌕ find</button>
+        <button class="accent">✎ edit src</button>
+        <span class="spacer"></span>
+        <span class="status-dot" title="live"></span>
+        <span class="url"><span class="scheme">http://</span><span class="host">localhost:7654</span><span class="path">/foo.html</span></span>
+      </div>
+      <div class="body">preview area</div>
+    </div>
+    <button class="pick" data-pick="B">Pick B</button>
+  </div>
+
+  <!-- C: GRADIENT -->
+  <div class="specimen">
+    <div class="specimen-header">
+      <div class="specimen-title">C · Gradient accent</div>
+      <div class="specimen-tag">v0 / Vercel / "AI tool" signal</div>
+    </div>
+    <div class="specimen-desc">Mostly neutral — but Find and Edit Source get a gradient outline that immediately reads as "AI-adjacent product." A single accent color carries through the URL.</div>
+    <div class="frame">
+      <div class="grad-bar">
+        <button>⟳</button>
+        <button>−</button>
+        <span class="zoom-label">100%</span>
+        <button>+</button>
+        <button>⟲</button>
+        <button class="gradient-btn">⌕ Find</button>
+        <button class="gradient-btn">✎ Edit Source</button>
+        <span class="spacer"></span>
+        <span class="url">localhost:7654 <span class="accent-dot">·</span> foo.html</span>
+      </div>
+      <div class="body">preview area</div>
+    </div>
+    <button class="pick" data-pick="C">Pick C</button>
+  </div>
+
+  <!-- D: MINIMAL FLOATING (bonus, even though user picked aesthetic-only) -->
+  <div class="specimen">
+    <div class="specimen-header">
+      <div class="specimen-title">D · Floating glass (bonus)</div>
+      <div class="specimen-tag">minimal · hover to reveal</div>
+    </div>
+    <div class="specimen-desc">Toolbar fades when not hovered — maximum preview area. Hover the frame to see it pop in. Including this as a bonus even though you picked "aesthetic only" — feels worth showing.</div>
+    <div class="frame">
+      <div class="min-shell">
+        <div class="min-bar">
+          <button>⟳</button>
+          <button>−</button>
+          <span class="zoom-label">100%</span>
+          <button>+</button>
+          <button>⌕ Find</button>
+          <button>✎ Edit</button>
+        </div>
+        <div class="body">hover me — toolbar fades in</div>
+        <span class="min-hint">foo.html</span>
+      </div>
+    </div>
+    <button class="pick" data-pick="D">Pick D</button>
+  </div>
+
+  <p class="sub" style="margin-top: 40px;">Click "Pick X" to log your choice — or just tell me which one you want in chat.</p>
+</div>
+
+<script>
+  document.querySelectorAll('[data-pick]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const choice = btn.getAttribute('data-pick');
+      btn.textContent = '✓ Picked ' + choice + ' — tell me in chat';
+      btn.style.background = '#1f3a1f';
+      btn.style.borderColor = '#2f5a2f';
+    });
+  });
+</script>
+</body>
+</html>

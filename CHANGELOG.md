@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.5]
+
+- Fixed Find (Cmd/Ctrl+F) not working — the in-page text search now highlights matches and the keyboard shortcut works whether focus is on the toolbar or inside the rendered page
+
 ## [2.0.3]
 
 - Edit Source button is now a toggle — click once to open the source editor beside the preview, click again to close it

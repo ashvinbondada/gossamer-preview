@@ -506,6 +506,17 @@ window.__vscodeCalls = [];
       assert.ok(!toolbar.classList.contains('waking'),
         '.waking should be removed after the sweep duration');
     });
+
+    it('mouseenter on the iframe wakes the toolbar (cross-origin mousemove does not bubble)', () => {
+      const { window, document } = setup();
+      const toolbar = document.getElementById('toolbar')!;
+      toolbar.classList.add('dimmed');
+      const frame = document.getElementById('frame')!;
+      frame.dispatchEvent(new (window as any).Event('mouseenter', { bubbles: false }));
+      assert.ok(toolbar.classList.contains('waking'),
+        'iframe mouseenter must fire bumpToolbar — otherwise hovering the previewed content does not wake the toolbar');
+      assert.ok(!toolbar.classList.contains('dimmed'));
+    });
   });
 
   describe('gossamer-find postMessage emission', () => {

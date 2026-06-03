@@ -10,17 +10,28 @@ export function escapeAttr(s: string): string {
 // previewUrl is the server URL — we extract its directory and inject as base.
 // This makes srcdoc-loaded HTML behave like server-loaded HTML for assets.
 export function wrapWithBase(rawHtml: string, previewUrl: string): string {
+  // Lazy-require to avoid circular import at module load time.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { injectReloadScript } = require('./liveReload');
+
   // Compute the base directory of the URL (strip the filename).
   const baseUrl = previewUrl.replace(/\/[^/]*$/, '/');
   const baseTag = `<base href="${escapeAttr(baseUrl)}">`;
-  // Inject after <head> if present, else before first content, else just prepend.
+  // Inject the <base href> after <head> if present, else before first content.
+  let withBase: string;
   if (/<head[^>]*>/i.test(rawHtml)) {
-    return rawHtml.replace(/<head[^>]*>/i, (m) => m + baseTag);
+    withBase = rawHtml.replace(/<head[^>]*>/i, (m) => m + baseTag);
+  } else if (/<html[^>]*>/i.test(rawHtml)) {
+    withBase = rawHtml.replace(/<html[^>]*>/i, (m) => m + '<head>' + baseTag + '</head>');
+  } else {
+    withBase = baseTag + rawHtml;
   }
-  if (/<html[^>]*>/i.test(rawHtml)) {
-    return rawHtml.replace(/<html[^>]*>/i, (m) => m + '<head>' + baseTag + '</head>');
-  }
-  return baseTag + rawHtml;
+
+  // ALSO inject the keydown forwarder + find helper. Without this, host
+  // shortcuts (Cmd+P, Cmd+Shift+P) and our toolbar Find don't work when
+  // focus is inside the previewed page. injectReloadScript adds the same
+  // script the HTTP server adds for external browsers.
+  return injectReloadScript(withBase);
 }
 
 export function buildToolbarMarkup(previewUrl: string, title: string): string {
@@ -531,6 +542,13 @@ ${clipDebug}
     wrap.addEventListener('mousemove', bumpToolbar);
     toolbar.addEventListener('mouseenter', function() { toolbar.classList.remove('dimmed'); if (dimTimer) clearTimeout(dimTimer); });
     toolbar.addEventListener('mouseleave', bumpToolbar);
+    // The iframe is cross-origin (or srcdoc same-origin) and its internal
+    // mousemove events do NOT bubble to the parent. But mouseenter on the
+    // iframe ELEMENT itself fires in the parent DOM when the cursor crosses
+    // into the iframe rectangle. That's our signal to wake the toolbar.
+    if (frame && frame.addEventListener) {
+      frame.addEventListener('mouseenter', bumpToolbar);
+    }
   }
   bumpToolbar();
   __mark('script init done');

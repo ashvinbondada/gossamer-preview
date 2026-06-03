@@ -1,15 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { buildHtml } from './previewHtml';
+import { buildHtml, wrapWithBase } from './previewHtml';
 import { perfScope } from './perf';
 import { dispatchHostKey } from './hostKeys';
 import { capture, captureException } from './posthog';
+import { registerPanel } from './panelRegistry';
 
 export { buildHtml } from './previewHtml';
 
 const panels = new Map<string, vscode.WebviewPanel>(); // fsPath -> panel
 
-export function showPreview(fsPath: string, previewUrl: string) {
+export function showPreview(fsPath: string, previewUrl: string, getRawHtml?: (fsPath: string) => string) {
   const t = perfScope('showPreview', fsPath);
   const existing = panels.get(fsPath);
   if (existing) {
@@ -45,6 +46,18 @@ export function showPreview(fsPath: string, previewUrl: string) {
   });
   panel.onDidDispose(() => panels.delete(fsPath));
   panels.set(fsPath, panel);
+  registerPanel(fsPath, panel);
+
+  // Push initial srcdoc content.
+  if (getRawHtml) {
+    try {
+      const raw = getRawHtml(fsPath);
+      const wrapped = wrapWithBase(raw, previewUrl);
+      panel.webview.postMessage({ type: 'gossamer-srcdoc', html: wrapped });
+    } catch (err) {
+      captureException(err, { context: 'showPreview_srcdoc_push' });
+    }
+  }
   t.end();
 }
 

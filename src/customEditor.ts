@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { buildHtml } from './previewPanel';
-import { perfScope } from './perf';
+import { perfScope, perfMark } from './perf';
 import { capture, captureException } from './posthog';
 import { dispatchHostKey } from './hostKeys';
+import { registerPanel } from './panelRegistry';
 
 export const VIEW_TYPE = 'gossamer-preview.html';
 
@@ -34,17 +35,20 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
   constructor(
     private context: vscode.ExtensionContext,
     private getPreviewUrl: (fsPath: string) => string,
-    private serverReady: Promise<unknown>
+    private serverReady: Promise<unknown>,
+    private getRawHtml: (fsPath: string) => string
   ) {}
 
   async resolveCustomTextEditor(
     document: vscode.TextDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
+    const fileLabel = path.basename(document.uri.fsPath);
+    perfMark(`resolve(${fileLabel}) entry`);
     const t = perfScope('customEditor.resolve', document.uri.fsPath);
     const __t0 = Date.now();
     const __dbg = (msg: string) => {
-      try { console.log('[gossamer] resolve ' + path.basename(document.uri.fsPath) + ' +' + (Date.now() - __t0) + 'ms ' + msg); } catch {}
+      try { console.log('[gossamer] resolve ' + fileLabel + ' +' + (Date.now() - __t0) + 'ms ' + msg); } catch {}
     };
     __dbg('start');
     panel.webview.options = { enableScripts: true };
@@ -70,13 +74,36 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     __dbg('getPreviewUrl ' + previewUrl);
     const copyPath = vscode.workspace.asRelativePath(document.uri.fsPath, false);
     t.mark('asRelativePath done');
-    const html = buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
+    // DIAGNOSTIC: when true, skip the iframe entirely so we can test whether the
+    // iframe itself (not extension code) is what's making reload hang.
+    const SKIP_IFRAME_DIAGNOSTIC = false;
+    const html = SKIP_IFRAME_DIAGNOSTIC
+      ? `<!DOCTYPE html><html><body style="background:#0d0d0f;color:#e6e6e6;font-family:sans-serif;padding:20px"><h2>Diagnostic mode</h2><p>iframe disabled to test reload hang.</p><p>File: ${path.basename(document.uri.fsPath)}</p></body></html>`
+      : buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
     t.mark(`buildHtml done (${html.length} chars)`);
     __dbg('buildHtml ' + html.length + ' chars');
     panel.webview.html = html;
     __test.webviewHtmlAssignCount++;
+    registerPanel(document.uri.fsPath, panel);
     t.mark('webview.html assigned');
     __dbg('webview.html assigned — DONE');
+    perfMark(`resolve(${fileLabel}) webview.html assigned, resolve will return`);
+
+    // Push the initial iframe content as srcdoc. The iframe element is rendered
+    // with src="about:blank" — no network — and we hydrate it via postMessage.
+    // This avoids the cross-origin HTTP fetch that triggered Cursor's slow
+    // webview disposal on window reload.
+    try {
+      const { wrapWithBase } = await import('./previewHtml');
+      const raw = this.getRawHtml(document.uri.fsPath);
+      const wrapped = wrapWithBase(raw, previewUrl);
+      // Post immediately — the webview script registers its message handler
+      // synchronously when buildPreviewScript runs, so it's ready.
+      panel.webview.postMessage({ type: 'gossamer-srcdoc', html: wrapped });
+      perfMark(`resolve(${fileLabel}) pushed initial srcdoc (${wrapped.length} chars)`);
+    } catch (err: any) {
+      perfMark(`resolve(${fileLabel}) initial srcdoc push threw: ${err?.message}`);
+    }
     t.end();
     capture('preview opened via custom editor', { method: 'custom_editor' });
 
@@ -93,7 +120,11 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     };
 
     const editorChangeDisposable = vscode.window.onDidChangeVisibleTextEditors(syncToggleState);
-    panel.onDidDispose(() => editorChangeDisposable.dispose());
+    panel.onDidDispose(() => {
+      perfMark(`panel.onDidDispose(${fileLabel}) fired`);
+      try { editorChangeDisposable.dispose(); } catch {}
+      perfMark(`panel.onDidDispose(${fileLabel}) done`);
+    });
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg?.type === 'editSource') {

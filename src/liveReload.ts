@@ -26,13 +26,20 @@ const INJECTED = `
 <script>
 (function() {
 ${PERF_HEADER}
-  var ws = new WebSocket('ws://' + location.host + location.pathname);
-  ws.onmessage = function(e) { if (e.data === 'reload') location.reload(); };
-  ws.onclose = function() { setTimeout(function() { location.reload(); }, 1000); };
-  __iframeMark('iframe WS connecting');
-  if (ws && typeof ws.addEventListener === 'function') {
-    ws.addEventListener('open', function() { __iframeMark('iframe WS open'); });
-  }
+  // Live reload via postMessage from parent webview — NOT WebSocket.
+  // The old WebSocket-based reload was the root cause of window-reload hangs:
+  // Cursor's webview disposal awaited the ws.close handshake, which could
+  // take 30-60 seconds because the browser doesn't always propagate FIN
+  // promptly when an iframe is being torn down. postMessage has no such
+  // teardown semantics; it just stops being delivered.
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'gossamer-reload') {
+      try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME got gossamer-reload, calling location.reload()' }, '*'); } catch (err) {}
+      location.reload();
+    }
+  });
+  __iframeMark('iframe reload listener attached');
+  try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME reload listener attached' }, '*'); } catch (err) {}
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() { __iframeMark('iframe DOMContentLoaded'); });
@@ -225,6 +232,17 @@ export class LiveReloadServer {
   private bufferText: Map<string, string> = new Map(); // fsPath -> in-memory editor text
   public port = 0;
 
+  // Returns the live HTML content for an fs path: in-memory editor buffer if
+  // the user has unsaved edits, otherwise reads from disk. Returns the RAW
+  // file content (no live-reload script injection — that's only for the
+  // legacy HTTP server path used by external browsers). Used by the
+  // srcdoc-based iframe to assign content directly without going through HTTP.
+  getRawHtml(fsPath: string): string {
+    const buffered = this.bufferText.get(fsPath);
+    if (buffered !== undefined) return buffered;
+    return fs.readFileSync(fsPath, 'utf8');
+  }
+
   setBufferText(fsPath: string, text: string) {
     this.bufferText.set(fsPath, text);
   }
@@ -254,7 +272,12 @@ export class LiveReloadServer {
       }
       try {
         const html = this.bufferText.get(fsPath) ?? fs.readFileSync(fsPath, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.writeHead(200, {
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        });
         res.end(injectReloadScript(html));
       } catch (err) {
         captureException(err, { context: 'file_read', url_path: urlPath });
@@ -371,11 +394,23 @@ export class LiveReloadServer {
     return this.registerFile(fsPath);
   }
 
+  // Callback fired when reload(fsPath) is called. extension.ts registers a
+  // handler that broadcasts a postMessage to every webview panel for that file.
+  // This replaces the WebSocket-based broadcast that was the root cause of the
+  // window-reload hang.
+  private _reloadListener: ((fsPath: string) => void) | undefined;
+  onReloadRequested(fn: (fsPath: string) => void) { this._reloadListener = fn; }
+
   reload(fsPath: string) {
+    try { this._reloadListener?.(fsPath); } catch (err) {
+      console.log('[gossamer] reload listener threw:', err);
+    }
+    // Still also push to legacy WebSocket clients for backwards compat with
+    // external browsers (people opening http://localhost:7654/foo.html
+    // directly in Chrome). These are not webviews and not the hang trigger.
     const urlPath = this.registerFile(fsPath);
     const bucket = this.clients.get(urlPath);
     const clientCount = bucket?.size ?? 0;
-    console.log(`[gossamer] reload() for ${urlPath}, ${clientCount} clients`);
     bucket?.forEach((ws) => { if (ws.readyState === 1) ws.send('reload'); });
     if (clientCount > 0) {
       capture('live reload triggered', { client_count: clientCount });
@@ -383,8 +418,55 @@ export class LiveReloadServer {
   }
 
   dispose() {
-    this.clients.forEach((bucket) => bucket.forEach((ws) => ws.terminate?.()));
+    const t0 = Date.now();
+    const dbg = (msg: string) => {
+      try { console.log('[gossamer] dispose +' + (Date.now() - t0) + 'ms ' + msg); } catch {}
+      // Also write to the disk lifecycle log so we can see it post-mortem.
+      try {
+        // Use require to avoid a circular import at module load time.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { perfMark } = require('./perf');
+        perfMark('  liveReload.dispose +' + (Date.now() - t0) + 'ms ' + msg);
+      } catch {}
+    };
+    dbg('start');
+    // Forcibly terminate every WebSocket wrapper we know about.
+    let wsCount = 0;
+    this.clients.forEach((bucket) => bucket.forEach((ws) => {
+      wsCount++;
+      try { ws.terminate?.(); } catch {}
+    }));
     this.clients.clear();
-    this.server.close();
+    dbg('terminated ' + wsCount + ' ws wrappers');
+
+    // Forcibly destroy ALL still-open server sockets (HTTP keep-alive, WebSocket
+    // upgrades, etc.). Without this, server.close() awaits each socket's
+    // natural close which can hang for many seconds on window reload — the
+    // browser-side closed connections don't always propagate the FIN quickly,
+    // and Node's HTTP server holds open Keep-Alive sockets by default.
+    try {
+      // closeAllConnections is Node 18.2+ and atomically destroys every
+      // connection regardless of state. This is the magic bullet.
+      const anyServer = this.server as any;
+      if (typeof anyServer.closeAllConnections === 'function') {
+        anyServer.closeAllConnections();
+        dbg('closeAllConnections() called');
+      }
+      if (typeof anyServer.closeIdleConnections === 'function') {
+        anyServer.closeIdleConnections();
+        dbg('closeIdleConnections() called');
+      }
+    } catch (err: any) {
+      dbg('connection close error: ' + (err && err.message ? err.message : err));
+    }
+
+    // server.close() returns the port to the OS. Without unref(), the server
+    // keeps the event loop alive even after close() — which would block the
+    // extension host from terminating cleanly.
+    try { (this.server as any).unref?.(); } catch {}
+    this.server.close((err) => {
+      dbg('server.close cb ' + (err ? 'err=' + err.message : 'ok'));
+    });
+    dbg('dispose returned (server.close is async)');
   }
 }

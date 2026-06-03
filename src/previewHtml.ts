@@ -5,6 +5,24 @@ export function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
+// Wrap raw HTML with a <base href> tag so relative URLs (<img src="x.png">,
+// <link href="style.css">) resolve against the live-reload HTTP server. The
+// previewUrl is the server URL — we extract its directory and inject as base.
+// This makes srcdoc-loaded HTML behave like server-loaded HTML for assets.
+export function wrapWithBase(rawHtml: string, previewUrl: string): string {
+  // Compute the base directory of the URL (strip the filename).
+  const baseUrl = previewUrl.replace(/\/[^/]*$/, '/');
+  const baseTag = `<base href="${escapeAttr(baseUrl)}">`;
+  // Inject after <head> if present, else before first content, else just prepend.
+  if (/<head[^>]*>/i.test(rawHtml)) {
+    return rawHtml.replace(/<head[^>]*>/i, (m) => m + baseTag);
+  }
+  if (/<html[^>]*>/i.test(rawHtml)) {
+    return rawHtml.replace(/<html[^>]*>/i, (m) => m + '<head>' + baseTag + '</head>');
+  }
+  return baseTag + rawHtml;
+}
+
 export function buildToolbarMarkup(previewUrl: string, title: string): string {
   return `<div class="frame-wrap" id="wrap">
   <div class="skeleton" id="skeleton" aria-hidden="true">
@@ -13,7 +31,7 @@ export function buildToolbarMarkup(previewUrl: string, title: string): string {
     <div class="skel-line skel-line-3"></div>
     <div class="skel-line skel-line-4"></div>
   </div>
-  <iframe id="frame" src="${escapeAttr(previewUrl)}"></iframe>
+  <iframe id="frame" src="about:blank" data-base-href="${escapeAttr(previewUrl)}"></iframe>
 
   <div class="toolbar" id="toolbar">
     <div class="controls-left">
@@ -350,6 +368,26 @@ ${clipDebug}
       lastTotal = msg.total || 0;
       lastCurrent = msg.current || 0;
       updateCount();
+    } else if (msg.type === 'gossamer-srcdoc') {
+      // Extension host sent the iframe's HTML content as a string. Assign as
+      // srcdoc. This replaces the old src=http://... approach which caused
+      // Cursor's webview disposal to hang for ~10-13s on window reload.
+      __clip('PARENT got srcdoc len=' + (msg.html ? msg.html.length : 0));
+      if (typeof msg.html === 'string') {
+        // Preserve scroll position across reloads by reading the iframe's
+        // scrollY before swap and restoring after the new doc loads. Best-effort.
+        var savedScroll = 0;
+        try {
+          if (frame.contentWindow) savedScroll = frame.contentWindow.scrollY || 0;
+        } catch (e) {}
+        frame.srcdoc = msg.html;
+        if (savedScroll > 0) {
+          frame.addEventListener('load', function once() {
+            frame.removeEventListener('load', once);
+            try { frame.contentWindow.scrollTo(0, savedScroll); } catch (e) {}
+          });
+        }
+      }
     } else if (msg.type === 'gossamer-key') {
       handleKey({
         key: msg.key,

@@ -7,9 +7,11 @@ describe('buildHtml (preview webview) — static structure', () => {
   const url = 'http://127.0.0.1:7654/foo.html';
   const title = 'foo.html';
 
-  it('includes the preview URL in iframe src', () => {
+  it('iframe is initialized to src="about:blank" with the preview URL exposed as data-base-href', () => {
     const html = buildHtml(url, title);
-    assert.ok(html.includes(`src="${url}"`));
+    assert.ok(html.includes('src="about:blank"'),
+      'iframe must start at about:blank — content is hydrated via srcdoc postMessage to avoid the cross-origin HTTP fetch that hangs Cursor webview disposal');
+    assert.ok(html.includes(`data-base-href="${url}"`));
   });
 
   it('escapes title in <title>', () => {

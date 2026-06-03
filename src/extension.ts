@@ -5,6 +5,9 @@ import { showPreview, disposeAllPreviews } from './previewPanel';
 import { GossamerHtmlEditor, VIEW_TYPE } from './customEditor';
 import { initPostHog, capture, captureException, shutdownPostHog } from './posthog';
 import { perfMark } from './perf';
+import { panelsFor } from './panelRegistry';
+import { wrapWithBase } from './previewHtml';
+perfMark('========== EXTENSION HOST START pid=' + process.pid + ' ==========');
 perfMark('extension.js module loaded');
 
 interface ExtensionApi {
@@ -53,6 +56,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     perfMark('setImmediate: initPostHog returned');
   });
 
+  // Wire the server's reload-requested signal to broadcast via webview.postMessage.
+  // Replaces the WebSocket-based reload that was the root cause of window-reload
+  // hangs (Cursor's webview disposal awaited ws.close handshake for 30-60s).
+  server.onReloadRequested((fsPath) => {
+    const panels = panelsFor(fsPath);
+    perfMark(`reload(${require('path').basename(fsPath)}) → ${panels.length} panel(s)`);
+    if (panels.length === 0) return;
+    try {
+      const raw = server.getRawHtml(fsPath);
+      const previewUrl = `http://127.0.0.1:${server.port}${server.setFile(fsPath)}`;
+      const html = wrapWithBase(raw, previewUrl);
+      let posted = 0;
+      panels.forEach((p) => {
+        try {
+          p.webview.postMessage({ type: 'gossamer-srcdoc', html });
+          posted++;
+        } catch (err: any) {
+          perfMark(`  postMessage threw: ${err?.message}`);
+        }
+      });
+      perfMark(`  posted gossamer-srcdoc (${html.length} chars) to ${posted} panel(s)`);
+    } catch (err: any) {
+      perfMark(`  reload broadcast threw: ${err?.message}`);
+    }
+  });
+
   perfMark('about to call server.start()');
   const serverReady = server.start().catch((err) => {
     captureException(err, { context: 'server_start' });
@@ -69,7 +98,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     (e) => perfMark('serverReady REJECTED ' + (e instanceof Error ? e.message : String(e)))
   );
 
-  context.subscriptions.push({ dispose: () => { server.dispose(); disposeAllPreviews(); } });
+  // CRITICAL: disposal MUST be synchronous-fast (<10ms) and never await async work.
+  // VS Code waits for every disposable when the extension host shuts down, and
+  // a slow dispose makes window reload hang because the previous extension
+  // host can't terminate cleanly.
+  context.subscriptions.push({
+    dispose: () => {
+      perfMark('subscription.dispose start');
+      // Snapshot handles BEFORE our cleanup so we can compare with deactivate.
+      try {
+        const handles = (process as any)._getActiveHandles?.() ?? [];
+        perfMark(`  before-cleanup handles: ${handles.length} (${handles.map((h: any) => h?.constructor?.name).slice(0, 12).join(',')})`);
+      } catch {}
+      try { server.dispose(); } catch (err) { perfMark('server.dispose threw ' + (err as any)?.message); }
+      try { disposeAllPreviews(); } catch (err) { perfMark('disposeAllPreviews threw ' + (err as any)?.message); }
+      try {
+        const handles = (process as any)._getActiveHandles?.() ?? [];
+        perfMark(`  after-cleanup handles: ${handles.length} (${handles.map((h: any) => h?.constructor?.name).slice(0, 12).join(',')})`);
+      } catch {}
+      perfMark('subscription.dispose done');
+    }
+  });
 
   const debounceTimers = new Map<string, NodeJS.Timeout>();
   const isHtmlDoc = (doc: vscode.TextDocument) =>
@@ -78,15 +127,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const changeListener = vscode.workspace.onDidChangeTextDocument((event) => {
     const doc = event.document;
     if (!isHtmlDoc(doc)) return;
+    perfMark(`onDidChangeTextDocument: ${require('path').basename(doc.fileName)} (queue 300ms debounce)`);
     server.setBufferText(doc.fileName, doc.getText());
     const existing = debounceTimers.get(doc.fileName);
     if (existing) clearTimeout(existing);
-    debounceTimers.set(doc.fileName, setTimeout(() => server.reload(doc.fileName), 300));
+    debounceTimers.set(doc.fileName, setTimeout(() => {
+      perfMark(`debounce fired → server.reload(${require('path').basename(doc.fileName)})`);
+      server.reload(doc.fileName);
+    }, 300));
   });
   context.subscriptions.push(changeListener);
 
   const saveListener = vscode.workspace.onDidSaveTextDocument((doc) => {
     if (!isHtmlDoc(doc)) return;
+    perfMark(`onDidSaveTextDocument: ${require('path').basename(doc.fileName)} → reload`);
     server.clearBufferText(doc.fileName);
     server.reload(doc.fileName);
   });
@@ -107,7 +161,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       VIEW_TYPE,
-      new GossamerHtmlEditor(context, getPreviewUrl, serverReady),
+      new GossamerHtmlEditor(context, getPreviewUrl, serverReady, (fsPath) => server.getRawHtml(fsPath)),
       { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: false }
     )
   );
@@ -125,7 +179,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       if (tab?.input instanceof vscode.TabInputCustom && tab.input.viewType === VIEW_TYPE) {
         vscode.workspace.openTextDocument(tab.input.uri).then((d) => {
           if (d.isDirty) server.setBufferText(d.fileName, d.getText());
-          showPreview(d.fileName, getPreviewUrl(d.fileName));
+          showPreview(d.fileName, getPreviewUrl(d.fileName), (p) => server.getRawHtml(p));
           capture('preview opened', { method: 'command' });
         });
         return;
@@ -138,7 +192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       return;
     }
     if (doc.isDirty) server.setBufferText(doc.fileName, doc.getText());
-    showPreview(doc.fileName, getPreviewUrl(doc.fileName));
+    showPreview(doc.fileName, getPreviewUrl(doc.fileName), (p) => server.getRawHtml(p));
     capture('preview opened', { method: 'command' });
   });
   context.subscriptions.push(openCmd);
@@ -149,11 +203,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     serverPort: () => server.port,
     urlPathFor: (fsPath: string) => server.setFile(fsPath),
   };
+
+  // Heartbeat: log every 500ms so we can see whether the extension host is
+  // alive during the post-activate / pre-deactivate quiet period. If the
+  // heartbeats stop firing before deactivate(), the event loop is starved.
+  // If they keep firing right up to deactivate, then we're alive and the
+  // hang is in Cursor's renderer/main-process awaiting something else.
+  let __heartbeat = 0;
+  const __heartbeatTimer = setInterval(() => {
+    __heartbeat++;
+    perfMark(`♥ heartbeat #${__heartbeat}`);
+  }, 500);
+  context.subscriptions.push({ dispose: () => clearInterval(__heartbeatTimer) });
+
   perfMark('activate() returning after ' + (Date.now() - __activateStart) + 'ms');
   return exportedApi;
 }
 
 export function deactivate() {
+  perfMark('========== deactivate() called pid=' + process.pid + ' ==========');
+
+  // Snapshot what's keeping the event loop alive. If this list is non-trivial
+  // when we return from deactivate(), Cursor's main process can't terminate
+  // our extension host until all those handles close — which IS the reload hang.
+  try {
+    const handles = (process as any)._getActiveHandles?.() ?? [];
+    const requests = (process as any)._getActiveRequests?.() ?? [];
+    perfMark(`active handles: ${handles.length} (types: ${handles.map((h: any) => h?.constructor?.name).slice(0, 20).join(', ')})`);
+    perfMark(`active requests: ${requests.length} (types: ${requests.map((r: any) => r?.constructor?.name).slice(0, 20).join(', ')})`);
+  } catch (err: any) { perfMark('handle snapshot threw: ' + err?.message); }
+
   // Fire-and-forget PostHog shutdown with a tight cap so we never block window
   // reload on a network flush. If the SDK hangs, we'd rather lose a few queued
   // events than freeze the editor.
@@ -163,6 +242,26 @@ export function deactivate() {
       new Promise<void>((resolve) => setTimeout(resolve, 200)),
     ]).catch(() => {});
   } catch {}
+  // Watchdog: 100ms after we return, snapshot handles again. If the process
+  // is still alive at this point with active handles, that's our hang.
+  // setImmediate also fires once the call stack clears, so we see the
+  // "right after deactivate" state too.
+  try {
+    setImmediate(() => {
+      const handles = (process as any)._getActiveHandles?.() ?? [];
+      perfMark(`[setImmediate after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
+    });
+    setTimeout(() => {
+      const handles = (process as any)._getActiveHandles?.() ?? [];
+      perfMark(`[+100ms after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
+    }, 100);
+    setTimeout(() => {
+      const handles = (process as any)._getActiveHandles?.() ?? [];
+      perfMark(`[+1000ms after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
+    }, 1000);
+  } catch {}
+
+  perfMark('deactivate() returning');
   // IMPORTANT: do NOT return a Promise here. VS Code awaits the deactivate
   // return value, and any slow async work blocks reload.
 }

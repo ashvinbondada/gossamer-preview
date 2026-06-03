@@ -17,6 +17,7 @@ AI coding agents like Claude, Claude Code, and Cursor generate HTML files as ric
 - **Edit Source toggle** — open and close the HTML source editor alongside the preview with one click
 - **Find in page** — Cmd/Ctrl+F search with match highlighting and navigation
 - **Zoom controls** — zoom in/out/reset via toolbar or Cmd/Ctrl+`+`/`-`/`0`
+- **VS Code shortcuts work inside the preview** — Cmd/Ctrl+P (Quick Open), Cmd/Ctrl+Shift+P (Command Palette), Cmd/Ctrl+S (Save), Cmd/Ctrl+W (Close), Cmd/Ctrl+B (Sidebar), Cmd/Ctrl+`` ` `` (Terminal) — all work even when focus is in the previewed page. (Custom keybindings for these chords are not currently honored inside the preview; defaults are used.)
 - **Update notifications** — in-editor banner when a new version is installed, with a changelog link
 - **Zero config** — no setup, no dependencies, just install and open an HTML file
 

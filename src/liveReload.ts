@@ -151,22 +151,61 @@ ${PERF_HEADER}
     }
   });
 
-  // Iframe-side keydown listener — BUBBLE PHASE (not capture).
+  // Iframe-side keydown listener — handles three classes of chords:
   //
-  // Why bubble? Capture-phase listeners on the iframe document are seen by Cursor/
-  // VS Code's keybinding shim as "the page is handling this," which suppresses
-  // host shortcuts like Cmd+P / Cmd+Shift+P. Bubble phase still gives us a chance
-  // to forward Cmd+F up to the parent webview (so Find works when focus is inside
-  // the previewed page), without preventing other modifier chords from reaching
-  // the host. We only call preventDefault for the SIX keys we actually handle.
+  //  1) Toolbar chords (Cmd+F/=/+/-/0) — forwarded to parent as 'gossamer-key'.
+  //     Parent triggers our own Find/zoom UI.
+  //  2) Iframe-native chords (Cmd+C/V/X/A/Z/Y) — NOT intercepted. The browser
+  //     handles copy/paste/undo natively against the iframe's selection.
+  //  3) Everything else with a modifier (Cmd+P, Cmd+S, Cmd+W, Cmd+B, etc.) —
+  //     forwarded to parent as 'gossamer-host-key', which relays to the
+  //     extension host so VS Code executes the corresponding command. This is
+  //     what lets Cmd+P open Quick Open even when focus is inside this iframe.
+  //
+  // Plain unmodified keys (typing, arrows, Tab, etc.) are always left alone.
+  var TOOLBAR_KEYS = ['f', '=', '+', '-', '0'];
   document.addEventListener('keydown', function(e) {
     var mod = e.metaKey || e.ctrlKey;
-    // Strict allowlist. For everything else, do nothing — no preventDefault, no
-    // postMessage. Cmd+C, Cmd+V, Cmd+P, Cmd+Shift+P, etc. fall through untouched.
-    if (mod && (e.key === 'f' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+    if (!mod) return;
+    var key = (e.key || '').toLowerCase();
+
+    // Cmd+C / Cmd+X: the cross-origin iframe in a vscode-webview is in a weird
+    // permission state where navigator.clipboard often fails silently. Solution:
+    // read the iframe's selection, send the text up to the parent webview, and
+    // let the PARENT (which has full clipboard permission in vscode-webview://)
+    // do the actual write. Also delete the selection here for cut.
+    if (key === 'c' || key === 'x') {
+      var sel = window.getSelection();
+      var text = sel ? sel.toString() : '';
+      try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME Cmd+' + key.toUpperCase() + ' selection.len=' + text.length + ' preview=' + JSON.stringify(text.slice(0, 40)) }, '*'); } catch (err) {}
+      if (text) {
+        e.preventDefault();
+        e.stopPropagation();
+        parent.postMessage({ type: 'gossamer-clipboard-write', text: text }, '*');
+        if (key === 'x' && sel && sel.deleteFromDocument) {
+          try { sel.deleteFromDocument(); } catch (err) {}
+        }
+      }
+      return;
+    }
+
+    // Cmd+V / Cmd+A / Cmd+Z / Cmd+Y: leave the browser's native handler alone.
+    // These act on input fields or selection inside the iframe and need no help.
+    if (key === 'v' || key === 'a' || key === 'z' || key === 'y') return;
+
+    if (TOOLBAR_KEYS.indexOf(key) >= 0) {
       e.preventDefault();
       parent.postMessage({ type: 'gossamer-key', key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey }, '*');
+      return;
     }
+    // Forward to host. The parent webview will relay to the extension host,
+    // which dispatches to the matching VS Code command via a hardcoded map.
+    e.preventDefault();
+    parent.postMessage({
+      type: 'gossamer-host-key',
+      key: e.key, code: e.code,
+      metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey
+    }, '*');
   }, false);
 })();
 </script>

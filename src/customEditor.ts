@@ -3,6 +3,7 @@ import * as path from 'path';
 import { buildHtml } from './previewPanel';
 import { perfScope } from './perf';
 import { capture, captureException } from './posthog';
+import { dispatchHostKey } from './hostKeys';
 
 export const VIEW_TYPE = 'gossamer-preview.html';
 
@@ -112,6 +113,13 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
             'default',
             { viewColumn: vscode.ViewColumn.Beside }
           );
+        }
+      } else if (msg?.type === 'host-key') {
+        try {
+          const ran = await dispatchHostKey(msg);
+          if (ran) capture('host_key_dispatched', { command: ran });
+        } catch (err) {
+          captureException(err, { context: 'host_key_dispatch' });
         }
       }
     });

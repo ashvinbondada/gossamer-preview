@@ -395,6 +395,81 @@ window.__vscodeCalls = [];
     });
   });
 
+  describe('host-key relay (parent → extension host)', () => {
+    function setupWithVsCodeApi(title: string = 'foo.html') {
+      const dom = new JSDOM(`<!DOCTYPE html><html><head><style>${PREVIEW_STYLES}</style></head>
+<body>${buildToolbarMarkup('http://127.0.0.1:7654/foo.html', title)}
+<script>
+window.acquireVsCodeApi = function() { return { postMessage: function(m) { window.__vscodeCalls.push(m); } }; };
+window.__vscodeCalls = [];
+</script>
+<script>${buildPreviewScript(title)}</script>
+</body></html>`, { runScripts: 'dangerously', pretendToBeVisual: true });
+      return { window: dom.window, document: dom.window.document, calls: (dom.window as any).__vscodeCalls };
+    }
+
+    it('relays gossamer-host-key (from iframe) → host-key (to extension host)', async () => {
+      const { window, calls } = setupWithVsCodeApi();
+      window.postMessage({
+        type: 'gossamer-host-key',
+        key: 'p', code: 'KeyP',
+        metaKey: true, ctrlKey: false, shiftKey: false, altKey: false,
+      }, '*');
+      await new Promise(r => setTimeout(r, 0));
+      const hostKey = calls.find((m: any) => m && m.type === 'host-key');
+      assert.ok(hostKey, 'parent must relay gossamer-host-key to extension host as host-key');
+      assert.strictEqual(hostKey.key, 'p');
+      assert.strictEqual(hostKey.metaKey, true);
+      assert.strictEqual(hostKey.shiftKey, false);
+    });
+
+    it('preserves modifier flags on relay (Cmd+Shift+P)', async () => {
+      const { window, calls } = setupWithVsCodeApi();
+      window.postMessage({
+        type: 'gossamer-host-key',
+        key: 'P', metaKey: true, shiftKey: true,
+      }, '*');
+      await new Promise(r => setTimeout(r, 0));
+      const hostKey = calls.find((m: any) => m && m.type === 'host-key');
+      assert.ok(hostKey);
+      assert.strictEqual(hostKey.shiftKey, true);
+      assert.strictEqual(hostKey.metaKey, true);
+    });
+
+    it('handles gossamer-clipboard-write by calling navigator.clipboard.writeText', async () => {
+      const { window } = setupWithVsCodeApi();
+      const writes: string[] = [];
+      Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: (s: string) => { writes.push(s); return Promise.resolve(); } }
+      });
+      window.postMessage({ type: 'gossamer-clipboard-write', text: 'hello from iframe' }, '*');
+      await new Promise(r => setTimeout(r, 0));
+      assert.ok(writes.includes('hello from iframe'),
+        `parent must write iframe-forwarded text to navigator.clipboard; got writes=${JSON.stringify(writes)}`);
+    });
+
+    it('ignores empty gossamer-clipboard-write', async () => {
+      const { window } = setupWithVsCodeApi();
+      const writes: string[] = [];
+      Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: (s: string) => { writes.push(s); return Promise.resolve(); } }
+      });
+      window.postMessage({ type: 'gossamer-clipboard-write', text: '' }, '*');
+      await new Promise(r => setTimeout(r, 0));
+      assert.strictEqual(writes.length, 0);
+    });
+
+    it('does NOT relay unrelated messages as host-key', async () => {
+      const { window, calls } = setupWithVsCodeApi();
+      window.postMessage({ type: 'gossamer-find-result', total: 1, current: 1 }, '*');
+      await new Promise(r => setTimeout(r, 0));
+      const hostKey = calls.find((m: any) => m && m.type === 'host-key');
+      assert.strictEqual(hostKey, undefined);
+    });
+  });
+
   describe('toolbar wake sweep animation', () => {
     // Must match the constant in src/previewHtml.ts. If you change it there, change here.
     const WAKE_SWEEP_MS = 1400;

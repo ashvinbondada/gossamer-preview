@@ -134,64 +134,127 @@ describe('injected find helper (jsdom)', () => {
       'stale request should not have cleared matches');
   });
 
-  // The iframe-side keydown listener is in BUBBLE phase only, strict allowlist:
-  // forwards Cmd+F/=/+/-/0 to parent. Anything else (Cmd+C, Cmd+V, Cmd+P,
-  // Cmd+Shift+P, Cmd+S, Escape, etc.) is untouched — no preventDefault, no forward.
+  // The iframe-side keydown listener forwards three classes:
+  //  - Cmd+F/=/+/-/0  → 'gossamer-key' (parent's toolbar handles it)
+  //  - Cmd+C/V/X/A/Z/Y → not touched (browser's native selection/clipboard)
+  //  - Everything else with a modifier → 'gossamer-host-key' (parent relays to
+  //    the extension host so VS Code executes the matching command)
 
-  it('forwards Cmd+F to parent (so Find works from inside the previewed page)', () => {
+  it('forwards Cmd+F as gossamer-key (toolbar Find)', () => {
     const { window, parentMessages } = setup();
     const ev = new (window as any).KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true });
     window.document.dispatchEvent(ev);
     const fwd = parentMessages.find(m => m.type === 'gossamer-key' && m.key === 'f');
     assert.ok(fwd, 'Cmd+F must be forwarded so the user can Cmd+F over the previewed content');
-    assert.strictEqual(ev.defaultPrevented, true, 'Cmd+F should be preventDefault-ed to suppress browser native find');
+    assert.strictEqual(ev.defaultPrevented, true);
   });
 
-  it('does NOT forward or preventDefault Cmd+P (must pass through to VS Code)', () => {
-    const { window, parentMessages } = setup();
-    const ev = new (window as any).KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true, cancelable: true });
-    window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
-    assert.strictEqual(ev.defaultPrevented, false);
-  });
+  for (const k of ['v', 'a', 'z', 'y']) {
+    it(`does NOT touch Cmd+${k.toUpperCase()} (browser-native)`, () => {
+      const { window, parentMessages } = setup();
+      const ev = new (window as any).KeyboardEvent('keydown', { key: k, metaKey: true, bubbles: true, cancelable: true });
+      window.document.dispatchEvent(ev);
+      assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key' || m.type === 'gossamer-host-key'), undefined,
+        `Cmd+${k.toUpperCase()} must not be forwarded`);
+      assert.strictEqual(ev.defaultPrevented, false,
+        `Cmd+${k.toUpperCase()} must not be preventDefault-ed`);
+    });
+  }
 
-  it('does NOT forward or preventDefault Cmd+Shift+P', () => {
-    const { window, parentMessages } = setup();
-    const ev = new (window as any).KeyboardEvent('keydown', { key: 'P', metaKey: true, shiftKey: true, bubbles: true, cancelable: true });
-    window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
-    assert.strictEqual(ev.defaultPrevented, false);
-  });
-
-  it('does NOT forward or preventDefault Cmd+C', () => {
+  it('Cmd+C with NO selection is left alone (browser handles whatever it does)', () => {
     const { window, parentMessages } = setup();
     const ev = new (window as any).KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true });
     window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
+    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key' || m.type === 'gossamer-host-key'), undefined);
     assert.strictEqual(ev.defaultPrevented, false);
   });
 
-  it('does NOT forward or preventDefault Cmd+V', () => {
-    const { window, parentMessages } = setup();
-    const ev = new (window as any).KeyboardEvent('keydown', { key: 'v', metaKey: true, bubbles: true, cancelable: true });
+  it('Cmd+C WITH a selection: forwards text to parent as gossamer-clipboard-write', async () => {
+    const { window, document, parentMessages } = setup('<p>hello world</p>');
+    const p = document.querySelector('p')!;
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true });
     window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
-    assert.strictEqual(ev.defaultPrevented, false);
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(ev.defaultPrevented, true,
+      'Cmd+C with selection MUST preventDefault so VS Code\'s parent-side empty-selection handler does not run');
+    const clipMsg = parentMessages.find((m: any) => m && m.type === 'gossamer-clipboard-write');
+    assert.ok(clipMsg, `expected gossamer-clipboard-write to be posted to parent, got: ${JSON.stringify(parentMessages)}`);
+    assert.ok((clipMsg as any).text.includes('hello world'));
+    // Also must NOT be forwarded as host-key.
+    assert.strictEqual(parentMessages.find((m: any) => m.type === 'gossamer-host-key'), undefined);
   });
 
-  it('does NOT forward or preventDefault Cmd+S (save)', () => {
+  it('Cmd+X with a selection: forwards text AND deletes selection', async () => {
+    const { window, document, parentMessages } = setup('<div contenteditable="true">cut me</div>');
+    const d = document.querySelector('div')!;
+    const range = document.createRange();
+    range.selectNodeContents(d);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'x', metaKey: true, bubbles: true, cancelable: true });
+    window.document.dispatchEvent(ev);
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(ev.defaultPrevented, true);
+    const clipMsg = parentMessages.find((m: any) => m && m.type === 'gossamer-clipboard-write');
+    assert.ok(clipMsg);
+    assert.ok((clipMsg as any).text.includes('cut me'));
+  });
+
+  it('forwards Cmd+P as gossamer-host-key (VS Code Quick Open)', () => {
+    const { window, parentMessages } = setup();
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true, cancelable: true });
+    window.document.dispatchEvent(ev);
+    const fwd = parentMessages.find(m => m.type === 'gossamer-host-key' && m.key === 'p');
+    assert.ok(fwd, 'Cmd+P must be forwarded to the host for command dispatch');
+    assert.strictEqual(fwd.metaKey, true);
+    assert.strictEqual(ev.defaultPrevented, true);
+  });
+
+  it('forwards Cmd+Shift+P as gossamer-host-key with shiftKey=true', () => {
+    const { window, parentMessages } = setup();
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'P', metaKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    window.document.dispatchEvent(ev);
+    const fwd = parentMessages.find(m => m.type === 'gossamer-host-key');
+    assert.ok(fwd);
+    assert.strictEqual(fwd.shiftKey, true);
+    assert.strictEqual(ev.defaultPrevented, true);
+  });
+
+  it('forwards Cmd+S as gossamer-host-key', () => {
     const { window, parentMessages } = setup();
     const ev = new (window as any).KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true, cancelable: true });
     window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
-    assert.strictEqual(ev.defaultPrevented, false);
+    assert.ok(parentMessages.find(m => m.type === 'gossamer-host-key' && m.key === 's'));
   });
 
-  it('does NOT forward Escape (parent handles its own Escape)', () => {
+  it('forwards Cmd+W as gossamer-host-key', () => {
+    const { window, parentMessages } = setup();
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true, cancelable: true });
+    window.document.dispatchEvent(ev);
+    assert.ok(parentMessages.find(m => m.type === 'gossamer-host-key' && m.key === 'w'));
+  });
+
+  it('plain Escape is not forwarded (parent owns Esc handling)', () => {
     const { window, parentMessages } = setup();
     const ev = new (window as any).KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     window.document.dispatchEvent(ev);
-    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key'), undefined);
+    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key' || m.type === 'gossamer-host-key'), undefined);
+    assert.strictEqual(ev.defaultPrevented, false);
+  });
+
+  it('plain typing (no modifier) is left completely alone', () => {
+    const { window, parentMessages } = setup();
+    const ev = new (window as any).KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true });
+    window.document.dispatchEvent(ev);
+    assert.strictEqual(parentMessages.find(m => m.type === 'gossamer-key' || m.type === 'gossamer-host-key'), undefined);
     assert.strictEqual(ev.defaultPrevented, false);
   });
 });

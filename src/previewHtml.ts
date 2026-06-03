@@ -65,6 +65,11 @@ export function buildToolbarMarkup(previewUrl: string, title: string): string {
 // Not exposed as a setting — there's no user-facing toggle and no command for it.
 const PERF_OVERLAY_ENABLED = false;
 
+// Flip to true locally for a build with a clipboard-debug overlay. Shows every
+// copy/cut event as it flows from the iframe → parent → clipboard. Click the
+// overlay to clear. Always false in shipped builds.
+const CLIPBOARD_DEBUG_ENABLED = false;
+
 export function buildPreviewScript(title: string, copyPath?: string): string {
   const toCopy = copyPath ?? title;
   const perfHeader = PERF_OVERLAY_ENABLED ? `
@@ -107,8 +112,34 @@ export function buildPreviewScript(title: string, copyPath?: string): string {
   // Perf instrumentation disabled. __mark is a no-op so calls compile away cheaply.
   function __mark() {}
 `;
+  const clipDebug = CLIPBOARD_DEBUG_ENABLED ? `
+  // ===== CLIPBOARD DEBUG OVERLAY (dev-only) =====
+  function __clip(msg) {
+    var el = document.getElementById('__gossamer_clip');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__gossamer_clip';
+      el.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;' +
+        'background:rgba(0,0,0,0.85);color:#ffd54f;font:11px/1.45 SF Mono,monospace;' +
+        'padding:8px 10px;border-radius:6px;border:1px solid #444;pointer-events:auto;' +
+        'max-width:480px;max-height:280px;overflow:auto;white-space:pre-wrap;cursor:pointer';
+      el.title = 'click to clear';
+      el.addEventListener('click', function() { el.textContent = '[clip] cleared\\n'; });
+      document.body.appendChild(el);
+      el.textContent = '[clip] ready\\n';
+    }
+    var t = new Date().toISOString().substr(11, 12);
+    el.textContent += '[' + t + '] ' + msg + '\\n';
+    el.scrollTop = el.scrollHeight;
+    try { console.log('[gossamer-clip]', msg); } catch (e) {}
+  }
+  __clip('parent script init');
+  ` : `
+  function __clip() {}
+`;
   return `(function() {
 ${perfHeader}
+${clipDebug}
   var frame = document.getElementById('frame');
   var wrap = document.getElementById('wrap');
   var toolbar = document.getElementById('toolbar');
@@ -327,6 +358,52 @@ ${perfHeader}
         shiftKey: !!msg.shiftKey,
         preventDefault: function() {}
       });
+    } else if (msg.type === 'gossamer-host-key') {
+      // Relay an iframe-side chord up to the extension host. The host has a
+      // hardcoded map of chord → VS Code command and will dispatch.
+      if (vscodeApi) {
+        vscodeApi.postMessage({
+          type: 'host-key',
+          key: msg.key, code: msg.code,
+          metaKey: !!msg.metaKey, ctrlKey: !!msg.ctrlKey,
+          shiftKey: !!msg.shiftKey, altKey: !!msg.altKey,
+        });
+      }
+    } else if (msg.type === 'gossamer-iframe-log') {
+      __clip(String(msg.msg || ''));
+    } else if (msg.type === 'gossamer-clipboard-write') {
+      // The iframe forwards selection text up to us because navigator.clipboard
+      // fails silently inside cross-origin iframes within vscode-webview://.
+      // The parent webview has full clipboard permission — do the write here.
+      var text = typeof msg.text === 'string' ? msg.text : '';
+      __clip('PARENT got clipboard-write text.len=' + text.length + ' preview=' + JSON.stringify(text.slice(0, 40)));
+      if (text) {
+        var nav = navigator.clipboard && navigator.clipboard.writeText;
+        __clip('  navigator.clipboard.writeText available: ' + !!nav);
+        try {
+          if (nav) {
+            navigator.clipboard.writeText(text).then(
+              function() { __clip('  SUCCESS: navigator.clipboard.writeText wrote ' + text.length + ' chars'); },
+              function(err) { __clip('  REJECT: navigator.clipboard.writeText: ' + (err && err.message ? err.message : err)); }
+            );
+          } else {
+            __clip('  fallback: execCommand');
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { __clip('  execCommand THREW: ' + e.message); }
+            document.body.removeChild(ta);
+            __clip('  execCommand returned: ' + ok);
+          }
+        } catch (e) {
+          __clip('  THREW: ' + (e && e.message ? e.message : e));
+        }
+      } else {
+        __clip('  empty text, skipped');
+      }
     } else if (msg.type === 'gossamer-perf') {
       // Iframe sends perf timestamps in its own performance.now() reference frame.
       // Display relative to parent's __PERF_T0 so all marks are comparable.

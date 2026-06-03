@@ -186,4 +186,37 @@ describe('Extension activation and commands', function () {
       );
     });
   });
+
+  describe('forwarded host chord dispatch (real vscode.commands)', function () {
+    this.timeout(15000);
+
+    it('dispatchHostKey actually runs the registered VS Code command', async () => {
+      // We can't synthesize a real cross-origin iframe keypress in test-electron,
+      // but we CAN invoke our dispatch function directly with the same shape of
+      // message the iframe would send. This proves the host-side wiring works:
+      // an iframe-side Cmd+P (Cmd+Shift+P) really does run quickOpen (showCommands).
+      const { dispatchHostKey } = await import('../../../hostKeys');
+
+      const ranQuickOpen = await dispatchHostKey({
+        type: 'host-key', key: 'p', metaKey: true,
+      });
+      assert.strictEqual(ranQuickOpen, 'workbench.action.quickOpen');
+      // close the quick open immediately so it doesn't blank out subsequent tests
+      await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+
+      const ranShowCommands = await dispatchHostKey({
+        type: 'host-key', key: 'P', metaKey: true, shiftKey: true,
+      });
+      assert.strictEqual(ranShowCommands, 'workbench.action.showCommands');
+      await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+    });
+
+    it('dispatchHostKey returns undefined for unknown chords (no command run)', async () => {
+      const { dispatchHostKey } = await import('../../../hostKeys');
+      const ran = await dispatchHostKey({
+        type: 'host-key', key: 'q', metaKey: true, altKey: true,
+      });
+      assert.strictEqual(ran, undefined);
+    });
+  });
 });

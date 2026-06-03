@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { buildHtml } from './previewHtml';
 import { perfScope } from './perf';
+import { dispatchHostKey } from './hostKeys';
+import { capture, captureException } from './posthog';
 
 export { buildHtml } from './previewHtml';
 
@@ -31,6 +33,16 @@ export function showPreview(fsPath: string, previewUrl: string) {
   t.mark(`buildHtml done (${html.length} chars)`);
   panel.webview.html = html;
   t.mark('webview.html assigned');
+  panel.webview.onDidReceiveMessage(async (msg) => {
+    if (msg?.type === 'host-key') {
+      try {
+        const ran = await dispatchHostKey(msg);
+        if (ran) capture('host_key_dispatched', { command: ran });
+      } catch (err) {
+        captureException(err, { context: 'host_key_dispatch' });
+      }
+    }
+  });
   panel.onDidDispose(() => panels.delete(fsPath));
   panels.set(fsPath, panel);
   t.end();

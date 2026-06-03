@@ -11,6 +11,126 @@ const INJECTED = `
   var ws = new WebSocket('ws://' + location.host + location.pathname);
   ws.onmessage = function(e) { if (e.data === 'reload') location.reload(); };
   ws.onclose = function() { setTimeout(function() { location.reload(); }, 1000); };
+
+  var HL = '__gossamer_hit__';
+  var ACTIVE = '__gossamer_hit_active__';
+  var matches = [];
+  var currentIndex = -1;
+  var lastSeq = 0;
+
+  function ensureStyle() {
+    if (document.getElementById('__gossamer_find_style__')) return;
+    var style = document.createElement('style');
+    style.id = '__gossamer_find_style__';
+    style.textContent =
+      '.' + HL + ' { background: #ffd54f; color: #000; }' +
+      '.' + ACTIVE + ' { background: #ff9800; color: #000; }';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function clearMatches() {
+    var marks = document.querySelectorAll('mark.' + HL);
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i];
+      var parent = m.parentNode;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    }
+    matches = [];
+    currentIndex = -1;
+  }
+
+  function postResult(seq) {
+    parent.postMessage({
+      type: 'gossamer-find-result',
+      seq: seq,
+      total: matches.length,
+      current: matches.length === 0 ? 0 : currentIndex + 1
+    }, '*');
+  }
+
+  function focusMatch(i, seq) {
+    if (matches.length === 0) { postResult(seq); return; }
+    if (currentIndex >= 0 && matches[currentIndex]) matches[currentIndex].classList.remove(ACTIVE);
+    currentIndex = (i + matches.length) % matches.length;
+    var m = matches[currentIndex];
+    m.classList.add(ACTIVE);
+    m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    postResult(seq);
+  }
+
+  function runSearch(query, seq) {
+    ensureStyle();
+    clearMatches();
+    if (!query) { postResult(seq); return; }
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        var p = node.parentNode;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        var tag = p.nodeName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var nodes = [];
+    var n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    var q = query.toLowerCase();
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var text = node.nodeValue;
+      var lower = text.toLowerCase();
+      var idx = lower.indexOf(q);
+      if (idx < 0) continue;
+      var parent = node.parentNode;
+      var cursor = 0;
+      var frag = document.createDocumentFragment();
+      while (idx >= 0) {
+        if (idx > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+        var mark = document.createElement('mark');
+        mark.className = HL;
+        mark.textContent = text.slice(idx, idx + q.length);
+        frag.appendChild(mark);
+        matches.push(mark);
+        cursor = idx + q.length;
+        idx = lower.indexOf(q, cursor);
+      }
+      if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+      parent.replaceChild(frag, node);
+    }
+    if (matches.length > 0) {
+      currentIndex = -1;
+      focusMatch(0, seq);
+    } else {
+      postResult(seq);
+    }
+  }
+
+  window.addEventListener('message', function(e) {
+    var msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'gossamer-find') {
+      if (msg.seq < lastSeq) return;
+      lastSeq = msg.seq;
+      runSearch(msg.query || '', msg.seq);
+    } else if (msg.type === 'gossamer-find-nav') {
+      focusMatch(currentIndex + (msg.direction || 1), msg.seq || 0);
+    } else if (msg.type === 'gossamer-find-clear') {
+      clearMatches();
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    var mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'f' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+      e.preventDefault();
+      parent.postMessage({ type: 'gossamer-key', key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey }, '*');
+    } else if (e.key === 'Escape') {
+      parent.postMessage({ type: 'gossamer-key', key: 'Escape' }, '*');
+    }
+  }, true);
 })();
 </script>
 `;

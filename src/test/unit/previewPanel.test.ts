@@ -68,11 +68,10 @@ describe('buildHtml (preview webview)', () => {
     assert.ok(html.includes("transform = 'scale("));
   });
 
-  it('find walks text nodes and skips script/style', () => {
+  it('find posts query messages to the iframe', () => {
     const html = buildHtml(url, title);
-    assert.ok(html.includes('SHOW_TEXT'));
-    assert.ok(html.includes("'SCRIPT'"));
-    assert.ok(html.includes("'STYLE'"));
+    assert.ok(html.includes("'gossamer-find'"));
+    assert.ok(html.includes('frame.contentWindow.postMessage'));
   });
 
   it('find supports Enter / Shift+Enter navigation', () => {

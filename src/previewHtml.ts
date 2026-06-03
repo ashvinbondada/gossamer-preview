@@ -89,97 +89,30 @@ export function buildHtml(previewUrl: string, title: string): string {
   var findBar = document.getElementById('findBar');
   var findInput = document.getElementById('findInput');
   var findCount = document.getElementById('findCount');
-  var matches = [];
-  var currentIndex = -1;
-  var highlightClass = '__gossamer_hit__';
-  var activeClass = '__gossamer_hit_active__';
+  var lastTotal = 0;
+  var lastCurrent = 0;
+  var findSeq = 0;
 
-  function ensureStyle() {
-    try {
-      var doc = frame.contentDocument;
-      if (!doc) return null;
-      if (!doc.getElementById('__gossamer_find_style__')) {
-        var style = doc.createElement('style');
-        style.id = '__gossamer_find_style__';
-        style.textContent =
-          '.' + highlightClass + ' { background: #ffd54f; color: #000; }' +
-          '.' + activeClass + ' { background: #ff9800; color: #000; }';
-        doc.head.appendChild(style);
-      }
-      return doc;
-    } catch (e) { return null; }
+  function sendFind(query) {
+    findSeq++;
+    if (frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'gossamer-find', query: query, seq: findSeq }, '*');
+    }
   }
-
-  function clearMatches() {
-    var doc = ensureStyle();
-    if (!doc) { matches = []; currentIndex = -1; return; }
-    var marks = doc.querySelectorAll('mark.' + highlightClass);
-    marks.forEach(function(m) {
-      var parent = m.parentNode;
-      while (m.firstChild) parent.insertBefore(m.firstChild, m);
-      parent.removeChild(m);
-      parent.normalize();
-    });
-    matches = [];
-    currentIndex = -1;
+  function sendNav(direction) {
+    findSeq++;
+    if (frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'gossamer-find-nav', direction: direction, seq: findSeq }, '*');
+    }
   }
-
-  function search(query) {
-    clearMatches();
-    if (!query) { updateCount(); return; }
-    var doc = ensureStyle();
-    if (!doc) { updateCount(); return; }
-    var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-      acceptNode: function(node) {
-        if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-        var p = node.parentNode;
-        if (!p) return NodeFilter.FILTER_REJECT;
-        var tag = p.nodeName;
-        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    var nodes = [];
-    var n;
-    while ((n = walker.nextNode())) nodes.push(n);
-    var q = query.toLowerCase();
-    nodes.forEach(function(node) {
-      var text = node.nodeValue;
-      var lower = text.toLowerCase();
-      var idx = lower.indexOf(q);
-      if (idx < 0) return;
-      var parent = node.parentNode;
-      var cursor = 0;
-      var frag = doc.createDocumentFragment();
-      while (idx >= 0) {
-        if (idx > cursor) frag.appendChild(doc.createTextNode(text.slice(cursor, idx)));
-        var mark = doc.createElement('mark');
-        mark.className = highlightClass;
-        mark.textContent = text.slice(idx, idx + q.length);
-        frag.appendChild(mark);
-        matches.push(mark);
-        cursor = idx + q.length;
-        idx = lower.indexOf(q, cursor);
-      }
-      if (cursor < text.length) frag.appendChild(doc.createTextNode(text.slice(cursor)));
-      parent.replaceChild(frag, node);
-    });
-    if (matches.length > 0) focusMatch(0);
-    updateCount();
-  }
-
-  function focusMatch(i) {
-    if (matches.length === 0) return;
-    if (currentIndex >= 0 && matches[currentIndex]) matches[currentIndex].classList.remove(activeClass);
-    currentIndex = (i + matches.length) % matches.length;
-    var m = matches[currentIndex];
-    m.classList.add(activeClass);
-    m.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    updateCount();
+  function sendClear() {
+    if (frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'gossamer-find-clear' }, '*');
+    }
   }
 
   function updateCount() {
-    findCount.textContent = (matches.length === 0 ? 0 : currentIndex + 1) + ' / ' + matches.length;
+    findCount.textContent = lastCurrent + ' / ' + lastTotal;
   }
 
   function openFind() {
@@ -189,20 +122,40 @@ export function buildHtml(previewUrl: string, title: string): string {
   }
   function closeFind() {
     findBar.classList.remove('visible');
-    clearMatches();
+    sendClear();
+    lastTotal = 0; lastCurrent = 0;
     updateCount();
     findInput.value = '';
   }
 
   document.getElementById('findBtn').onclick = openFind;
   document.getElementById('findClose').onclick = closeFind;
-  document.getElementById('findNext').onclick = function() { focusMatch(currentIndex + 1); };
-  document.getElementById('findPrev').onclick = function() { focusMatch(currentIndex - 1); };
+  document.getElementById('findNext').onclick = function() { sendNav(1); };
+  document.getElementById('findPrev').onclick = function() { sendNav(-1); };
 
-  findInput.addEventListener('input', function() { search(findInput.value); });
+  findInput.addEventListener('input', function() { sendFind(findInput.value); });
   findInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); focusMatch(currentIndex + (e.shiftKey ? -1 : 1)); }
+    if (e.key === 'Enter') { e.preventDefault(); sendNav(e.shiftKey ? -1 : 1); }
     else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+  });
+
+  window.addEventListener('message', function(e) {
+    var msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'gossamer-find-result') {
+      if (msg.seq && msg.seq < findSeq) return;
+      lastTotal = msg.total || 0;
+      lastCurrent = msg.current || 0;
+      updateCount();
+    } else if (msg.type === 'gossamer-key') {
+      handleKey({
+        key: msg.key,
+        metaKey: !!msg.metaKey,
+        ctrlKey: !!msg.ctrlKey,
+        shiftKey: !!msg.shiftKey,
+        preventDefault: function() {}
+      });
+    }
   });
 
   function handleKey(e) {
@@ -214,15 +167,11 @@ export function buildHtml(previewUrl: string, title: string): string {
     else if (e.key === 'Escape' && findBar.classList.contains('visible')) { e.preventDefault(); closeFind(); }
   }
   document.addEventListener('keydown', handleKey, true);
+  // On iframe navigation, re-run the active query so highlights persist across reloads.
   frame.addEventListener('load', function() {
-    try {
-      frame.contentDocument.addEventListener('keydown', function(e) {
-        var mod = e.metaKey || e.ctrlKey;
-        if (mod && (e.key === 'f' || e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
-          handleKey(e);
-        }
-      }, true);
-    } catch (err) {}
+    if (findBar.classList.contains('visible') && findInput.value) {
+      sendFind(findInput.value);
+    }
   });
 })();
 </script>

@@ -109,6 +109,21 @@ describe('injectReloadScript', () => {
     const out = injectReloadScript('<body></body>');
     assert.ok(out.includes('ws.onclose'));
   });
+
+  it('injects find helper that walks text nodes and skips script/style', () => {
+    const out = injectReloadScript('<body></body>');
+    assert.ok(out.includes('SHOW_TEXT'));
+    assert.ok(out.includes("'SCRIPT'"));
+    assert.ok(out.includes("'STYLE'"));
+    assert.ok(out.includes("'gossamer-find'"));
+  });
+
+  it('forwards Cmd/Ctrl+F keydown to parent', () => {
+    const out = injectReloadScript('<body></body>');
+    assert.ok(out.includes("'gossamer-key'"));
+    assert.ok(out.includes('metaKey'));
+    assert.ok(out.includes("'f'"));
+  });
 });
 
 describe('LiveReloadServer HTTP', () => {

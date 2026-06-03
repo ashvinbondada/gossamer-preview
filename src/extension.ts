@@ -3,7 +3,7 @@ import { LiveReloadServer } from './liveReload';
 import { registerDiffCommand } from './diffView';
 import { showPreview, disposeAllPreviews } from './previewPanel';
 import { GossamerHtmlEditor, VIEW_TYPE } from './customEditor';
-import { initPostHog, capture, captureException, shutdownPostHog } from './posthog';
+import { setIdentity, connectPostHog, capture, captureException, shutdownPostHog } from './posthog';
 import { perfMark } from './perf';
 import { panelsFor } from './panelRegistry';
 import { wrapWithBase } from './previewHtml';
@@ -50,11 +50,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const ext = vscode.extensions.getExtension('ashvinbondada.gossamer-preview');
   const version = (ext?.packageJSON?.version as string) ?? 'unknown';
 
-  setImmediate(() => {
-    perfMark('setImmediate: initPostHog starting');
-    try { initPostHog(vscode.env.machineId, version); } catch {}
-    perfMark('setImmediate: initPostHog returned');
-  });
+  // Set identity SYNCHRONOUSLY so any capture/captureException fired during
+  // activation (before the SDK finishes connecting) carries the correct
+  // distinctId. The actual SDK connect is deferred via setImmediate to keep
+  // it off the activation critical path.
+  setIdentity(vscode.env.machineId, version);
+
+  // Telemetry is gated by BOTH the global VS Code telemetry setting AND our
+  // own per-user opt-in. Either off = no events. Default is on for both.
+  const userOptedIn = vscode.workspace
+    .getConfiguration('gossamer-preview')
+    .get<boolean>('telemetry.enabled', true);
+  const vsCodeTelemetryOn = vscode.env.isTelemetryEnabled !== false;
+  const telemetryEnabled = userOptedIn && vsCodeTelemetryOn;
+
+  if (telemetryEnabled) {
+    setImmediate(() => {
+      perfMark('setImmediate: connectPostHog starting');
+      try { connectPostHog(); } catch {}
+      perfMark('setImmediate: connectPostHog returned');
+    });
+  } else {
+    perfMark(`telemetry disabled (user=${userOptedIn} vscode=${vsCodeTelemetryOn})`);
+  }
+
+  // Honor runtime changes to either telemetry switch.
+  context.subscriptions.push(vscode.env.onDidChangeTelemetryEnabled?.(() => {
+    if (vscode.env.isTelemetryEnabled === false) {
+      shutdownPostHog().catch(() => {});
+    }
+  }) ?? { dispose: () => {} });
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+    if (!e.affectsConfiguration('gossamer-preview.telemetry.enabled')) return;
+    const nowEnabled = vscode.workspace.getConfiguration('gossamer-preview').get<boolean>('telemetry.enabled', true);
+    if (!nowEnabled) {
+      shutdownPostHog().catch(() => {});
+    } else {
+      try { connectPostHog(); } catch {}
+    }
+  }));
 
   // Wire the server's reload-requested signal to broadcast via webview.postMessage.
   // Replaces the WebSocket-based reload that was the root cause of window-reload

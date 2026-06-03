@@ -26,16 +26,31 @@ function tryLoadSdk(): any | undefined {
   return _PostHog;
 }
 
-export function initPostHog(machineId: string, version: string): void {
+// Synchronously record the identity. Safe to call from activate() before the
+// SDK is loaded — any captures fired before connectPostHog() resolves still
+// reference the correct distinctId, so once the SDK connects and queued events
+// are flushed they have the right identity from the start.
+export function setIdentity(machineId: string, version: string): void {
   _distinctId = machineId;
   _version = version;
-  const apiKey = process.env.POSTHOG_API_KEY;
+}
+
+// PostHog project key for the Gossamer Preview project. Public-safe by design:
+// project API keys (phc_*) can only WRITE events to the project, not read.
+// Embedded so shipped extensions report telemetry without users needing to
+// configure anything. Override via POSTHOG_API_KEY env var for local dev.
+const POSTHOG_PROJECT_KEY = 'phc_pmcKFyMAXmBzCXsbTChVyc6Jynn5A2otKHQxRnktRPum';
+const POSTHOG_DEFAULT_HOST = 'https://us.i.posthog.com';
+
+// Actually load the SDK and open a connection. Heavier — defer via setImmediate.
+export function connectPostHog(): void {
+  const apiKey = process.env.POSTHOG_API_KEY || POSTHOG_PROJECT_KEY;
   if (!apiKey) return;
   const PostHog = tryLoadSdk();
   if (!PostHog) return;
   try {
     _client = new PostHog(apiKey, {
-      host: process.env.POSTHOG_HOST,
+      host: process.env.POSTHOG_HOST || POSTHOG_DEFAULT_HOST,
       enableExceptionAutocapture: true,
     });
     _client.identify({
@@ -49,6 +64,13 @@ export function initPostHog(machineId: string, version: string): void {
     _client = undefined;
     try { console.warn('[gossamer] posthog init failed; telemetry disabled', err); } catch {}
   }
+}
+
+// Back-compat shim: initPostHog is what extension.ts currently calls. It does
+// both steps. Kept for callers that want the old single-call API.
+export function initPostHog(machineId: string, version: string): void {
+  setIdentity(machineId, version);
+  connectPostHog();
 }
 
 export function capture(event: string, properties?: Record<string, unknown>): void {

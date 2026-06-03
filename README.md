@@ -43,3 +43,13 @@ code --install-extension ashvinbondada.gossamer-preview
 
 - VS Code `^1.80.0` or Cursor (any recent version)
 - No additional dependencies
+
+## Telemetry & Privacy
+
+Gossamer Preview sends a small amount of **anonymous** usage and error telemetry (extension version, feature usage, errors). We never collect file contents, file paths, workspace names, or anything that identifies you personally.
+
+The identifier is VS Code's anonymous `machineId`, which resets when you reinstall the editor.
+
+**To disable telemetry**, set `gossamer-preview.telemetry.enabled` to `false`, or turn off `telemetry.telemetryLevel` globally — either takes effect immediately, no reload required.
+
+**Full details:** see [PRIVACY.md](PRIVACY.md) for the complete list of what we collect, what we don't, how to opt out, and how to request data deletion.

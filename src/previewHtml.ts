@@ -392,7 +392,7 @@ ${perfHeader}
 
   var dimTimer = null;
   var wakeTimer = null;
-  var WAKE_SWEEP_MS = 750;
+  var WAKE_SWEEP_MS = 1400;
   function bumpToolbar() {
     // Only play the warm sweep when waking from an already-dimmed state.
     // The initial call from page load skips this because .dimmed isn't set yet.
@@ -493,32 +493,55 @@ export const PREVIEW_STYLES = `
   .toolbar.dimmed { opacity: 0.25; }
   .toolbar.open { width: min(640px, calc(100% - 32px)); }
 
-  /* Warm orange→black sweep that plays once when the toolbar wakes from idle. */
+  /* Warm orange rotating border that plays once when the toolbar wakes from idle.
+     Technique (no mask gymnastics): a pseudo-element behind the toolbar carries
+     two stacked backgrounds — an opaque dark fill on padding-box (which hides the
+     interior) and a conic-gradient on border-box (which shows through the
+     transparent border). Animating --wake-angle via @property rotates the conic
+     gradient smoothly.
+     Refs:
+       https://codetv.dev/blog/animated-css-gradient-border
+       https://css-tricks.com/almanac/functions/c/conic-gradient/  */
+  @property --wake-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
   .toolbar::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    border-radius: inherit;
+    inset: -2px;
+    z-index: -1;
+    border-radius: 999px;
+    border: 2px solid transparent;
     pointer-events: none;
     opacity: 0;
-    background: linear-gradient(
-      90deg,
-      rgba(255,140,60,0) 0%,
-      rgba(255,140,60,0.55) 50%,
-      rgba(20,20,22,0) 100%
-    );
-    transform: translateX(-100%);
-    clip-path: inset(0 round 999px);
-    will-change: transform, opacity;
+    background:
+      linear-gradient(rgba(20,20,22,0.94), rgba(20,20,22,0.94)) padding-box,
+      conic-gradient(
+        from var(--wake-angle),
+        rgba(255,140,60,0) 0deg,
+        rgba(255,140,60,0) 70deg,
+        rgba(255,160,70,0.95) 140deg,
+        rgba(255,210,90,1) 180deg,
+        rgba(255,160,70,0.95) 220deg,
+        rgba(255,140,60,0) 290deg,
+        rgba(255,140,60,0) 360deg
+      ) border-box;
+    will-change: --wake-angle, opacity;
   }
   .toolbar.waking::before {
-    animation: toolbar-wake-sweep 750ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+    /* Longer total duration so the fade-out trails off into the background
+       instead of cutting off abruptly when the rotation finishes. */
+    animation: toolbar-wake-spin 1400ms cubic-bezier(0.22, 1, 0.36, 1) 1;
   }
-  @keyframes toolbar-wake-sweep {
-    0%   { transform: translateX(-100%); opacity: 0; }
-    15%  { opacity: 1; }
-    85%  { opacity: 1; }
-    100% { transform: translateX(100%); opacity: 0; }
+  @keyframes toolbar-wake-spin {
+    0%   { --wake-angle: 0deg;    opacity: 0; }
+    10%  { opacity: 1; }
+    /* Full rotation completes at ~60% so the remaining 40% of the timeline
+       is a slow opacity decay back to zero — settles like an ember dimming. */
+    60%  { --wake-angle: 360deg;  opacity: 1; }
+    100% { --wake-angle: 360deg;  opacity: 0; }
   }
 
   .toolbar button {

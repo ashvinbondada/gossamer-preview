@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { buildDiffHtml } from './diffHtml';
+import { capture, captureException } from './posthog';
 
 async function pickHtmlFile(prompt: string): Promise<string | undefined> {
   const files = await vscode.workspace.findFiles('**/*.html', '**/node_modules/**');
@@ -32,6 +33,7 @@ export function registerDiffCommand(context: vscode.ExtensionContext) {
       htmlA = fs.readFileSync(pathA, 'utf8');
       htmlB = fs.readFileSync(pathB, 'utf8');
     } catch (e) {
+      captureException(e, { context: 'diff_file_read' });
       vscode.window.showErrorMessage('Failed to read HTML files.');
       return;
     }
@@ -49,6 +51,7 @@ export function registerDiffCommand(context: vscode.ExtensionContext) {
       path.basename(pathA),
       path.basename(pathB)
     );
+    capture('diff comparison opened');
   });
 
   context.subscriptions.push(cmd);

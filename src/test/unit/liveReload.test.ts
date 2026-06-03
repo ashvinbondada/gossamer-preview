@@ -234,3 +234,38 @@ describe('LiveReloadServer WebSocket', () => {
     assert.doesNotThrow(() => server.reload('/tmp/never-registered.html'));
   });
 });
+
+describe('LiveReloadServer.start hang safety', () => {
+  it('start() resolves quickly under normal conditions', async function() {
+    this.timeout(3500);
+    const s = new LiveReloadServer();
+    const t0 = Date.now();
+    const port = await s.start();
+    const dt = Date.now() - t0;
+    assert.ok(port > 0);
+    assert.ok(dt < 3000, `start() should finish well under the 3s timeout, took ${dt}ms`);
+    s.dispose();
+  });
+
+  it('start() falls back to a random port when 7654 is in use', async function() {
+    this.timeout(5000);
+    // Hog port 7654 with a dummy listener.
+    const hog = http.createServer();
+    await new Promise<void>((resolve, reject) => {
+      hog.once('error', (e: NodeJS.ErrnoException) => {
+        // If 7654 was already taken by something else, skip this test gracefully.
+        if (e.code === 'EADDRINUSE') resolve();
+        else reject(e);
+      });
+      hog.listen(7654, '127.0.0.1', () => resolve());
+    });
+
+    const s = new LiveReloadServer();
+    const port = await s.start();
+    assert.ok(port > 0);
+    assert.notStrictEqual(port, 7654, 'should have fallen back off the hogged port');
+
+    s.dispose();
+    await new Promise<void>((resolve) => hog.close(() => resolve()));
+  });
+});

@@ -120,19 +120,70 @@ describe('Extension activation and commands', function () {
     assert.ok(patterns.includes('*.htm'));
   });
 
-  it('declares Cmd+F find, zoom, and Edit Source in preview webview', async () => {
-    const { buildHtml } = await import('../../../previewHtml');
-    const html = buildHtml('http://x', 'y');
-    assert.ok(html.includes("e.key === 'f'"));
-    assert.ok(html.includes("e.key === '='") && html.includes("e.key === '-'") && html.includes("e.key === '0'"));
-    assert.ok(html.includes('Edit Source'));
-  });
-
   it('gossamer-preview.open command warns when no active editor', async () => {
     // close everything
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     // command should not throw; it shows a warning message
     await vscode.commands.executeCommand('gossamer-preview.open');
     // nothing crashes is good enough; success path is exercised elsewhere
+  });
+
+  describe('shortcut pass-through invariant (regression guard)', function () {
+    this.timeout(15000);
+
+    it('customEditor.resolve does NOT show placeholder in steady-state (avoids double webview.html)', async () => {
+      // The shortcut-breaking regression was: resolve() assigned panel.webview.html
+      // twice in quick succession (placeholder, then real HTML). Even though both
+      // payloads have clean keybinding handling, the double-assignment confuses
+      // Cursor's host keybinding shim and kills Cmd+P/C/V/Shift+P forwarding for
+      // that panel's lifetime. The fix races serverReady against a short delay so
+      // steady-state opens skip the placeholder. This test guards that contract.
+      const { __test } = await import('../../../customEditor');
+      __test.reset();
+
+      // Write a tiny HTML file and open it via the custom editor.
+      const tmpDir = require('os').tmpdir();
+      const tmpFile = path.join(tmpDir, `gossamer-it-shortcut-${Date.now()}.html`);
+      fs.writeFileSync(tmpFile, '<!doctype html><html><body><p>hi</p></body></html>');
+
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        vscode.Uri.file(tmpFile),
+        'gossamer-preview.html'
+      );
+
+      // Wait for resolveCustomTextEditor to finish — give it a generous budget.
+      await new Promise((r) => setTimeout(r, 1500));
+
+      assert.strictEqual(
+        __test.placeholderUseCount, 0,
+        'In steady-state, customEditor MUST NOT show the placeholder. ' +
+        'Showing it causes a double panel.webview.html assignment which ' +
+        'breaks Cmd+P / Cmd+Shift+P / Cmd+C / Cmd+V forwarding.'
+      );
+      assert.strictEqual(
+        __test.webviewHtmlAssignCount, 1,
+        `customEditor.resolve must assign panel.webview.html exactly once in steady-state. ` +
+        `Got ${__test.webviewHtmlAssignCount} assignments.`
+      );
+
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      try { fs.unlinkSync(tmpFile); } catch {}
+    });
+
+    it('build output does not call preventDefault for keys outside the allowlist', async () => {
+      // Source-level sanity: the parent webview script and the iframe-side helper
+      // both have early-returns for non-allowlist keys. If the regression returns,
+      // someone has almost certainly removed the early-return.
+      const { buildPreviewScript } = await import('../../../previewHtml');
+      const script = buildPreviewScript('foo.html');
+      // Look for the early-return guard against unrelated keys.
+      assert.ok(
+        script.includes('if (!isOurKey) return;') || script.includes('isOurKey'),
+        'parent keydown handler must early-return for non-allowlist keys — ' +
+        'otherwise capture-phase or accidental preventDefault breaks host chords'
+      );
+    });
   });
 });

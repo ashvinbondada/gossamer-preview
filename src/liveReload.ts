@@ -1,6 +1,7 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { capture, captureException } from './posthog';
 
 // Internal dev-only flag. Hard-coded false for shipped builds. Flip locally to
 // emit iframe-side perf marks (forwarded to parent overlay). Not user-toggleable.
@@ -216,7 +217,8 @@ export class LiveReloadServer {
         const html = this.bufferText.get(fsPath) ?? fs.readFileSync(fsPath, 'utf8');
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(injectReloadScript(html));
-      } catch {
+      } catch (err) {
+        captureException(err, { context: 'file_read', url_path: urlPath });
         res.writeHead(500);
         res.end('Error reading file');
       }
@@ -275,25 +277,54 @@ export class LiveReloadServer {
 
   start(): Promise<number> {
     const PREFERRED_PORT = 7654;
-    return new Promise((resolve) => {
-      const tryListen = (port: number) => {
-        this.server.once('error', (err: NodeJS.ErrnoException) => {
-          if (err.code === 'EADDRINUSE') {
-            // Port taken (another Cursor window) — fall back to random
-            this.server.listen(0, '127.0.0.1', () => {
-              const addr = this.server.address() as { port: number };
-              this.port = addr.port;
-              resolve(this.port);
-            });
-          }
-        });
-        this.server.listen(port, '127.0.0.1', () => {
-          const addr = this.server.address() as { port: number };
-          this.port = addr.port;
-          resolve(this.port);
-        });
+    const STARTUP_TIMEOUT_MS = 3000;
+    const t0 = Date.now();
+    const dbg = (msg: string) => { try { console.log('[gossamer] server +' + (Date.now() - t0) + 'ms ' + msg); } catch {} };
+    dbg('start() invoked');
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (port: number) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        dbg('resolved port=' + port);
+        resolve(port);
       };
-      tryListen(PREFERRED_PORT);
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        dbg('rejected ' + err.message);
+        reject(err);
+      };
+
+      const timeoutHandle = setTimeout(() => {
+        fail(new Error('LiveReloadServer.start timed out after ' + STARTUP_TIMEOUT_MS + 'ms'));
+      }, STARTUP_TIMEOUT_MS);
+
+      const onListen = () => {
+        const addr = this.server.address() as { port: number } | null;
+        if (!addr) { fail(new Error('server.address() returned null after listen')); return; }
+        this.port = addr.port;
+        done(this.port);
+      };
+
+      const tryFallback = () => {
+        dbg('preferred port in use, falling back to random');
+        this.server.removeAllListeners('error');
+        this.server.once('error', (err: NodeJS.ErrnoException) => fail(err));
+        this.server.listen(0, '127.0.0.1', onListen);
+      };
+
+      this.server.once('error', (err: NodeJS.ErrnoException) => {
+        dbg('listen error code=' + err.code);
+        if (err.code === 'EADDRINUSE') {
+          tryFallback();
+        } else {
+          fail(err);
+        }
+      });
+      this.server.listen(PREFERRED_PORT, '127.0.0.1', onListen);
     });
   }
 
@@ -304,8 +335,12 @@ export class LiveReloadServer {
   reload(fsPath: string) {
     const urlPath = this.registerFile(fsPath);
     const bucket = this.clients.get(urlPath);
-    console.log(`[gossamer] reload() for ${urlPath}, ${bucket?.size ?? 0} clients`);
+    const clientCount = bucket?.size ?? 0;
+    console.log(`[gossamer] reload() for ${urlPath}, ${clientCount} clients`);
     bucket?.forEach((ws) => { if (ws.readyState === 1) ws.send('reload'); });
+    if (clientCount > 0) {
+      capture('live reload triggered', { client_count: clientCount });
+    }
   }
 
   dispose() {

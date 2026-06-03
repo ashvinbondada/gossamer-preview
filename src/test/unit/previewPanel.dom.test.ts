@@ -396,7 +396,8 @@ window.__vscodeCalls = [];
   });
 
   describe('toolbar wake sweep animation', () => {
-    const WAKE_SWEEP_MS = 750;
+    // Must match the constant in src/previewHtml.ts. If you change it there, change here.
+    const WAKE_SWEEP_MS = 1400;
 
     it('does NOT add .waking class on initial page load', () => {
       const { document } = setup();

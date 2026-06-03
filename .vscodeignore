@@ -7,5 +7,8 @@ tsconfig.json
 **/*.map
 **/*.ts
 !out/**
-node_modules/**
+# Note: do NOT blanket-exclude node_modules — vsce already ships only the
+# packages listed under "dependencies" (not devDependencies). Excluding
+# everything here would strip runtime deps (posthog-node, etc.) and silently
+# break extension activation.
 scripts/**

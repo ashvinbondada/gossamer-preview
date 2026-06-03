@@ -1,8 +1,11 @@
+try { console.log('[gossamer] extension.js module loading at ' + Date.now()); } catch {}
 import * as vscode from 'vscode';
 import { LiveReloadServer } from './liveReload';
 import { registerDiffCommand } from './diffView';
 import { showPreview, disposeAllPreviews } from './previewPanel';
 import { GossamerHtmlEditor, VIEW_TYPE } from './customEditor';
+import { initPostHog, capture, captureException, shutdownPostHog } from './posthog';
+try { console.log('[gossamer] extension.js imports complete at ' + Date.now()); } catch {}
 
 interface ExtensionApi {
   serverPort(): number;
@@ -24,6 +27,7 @@ async function showUpdateNotification(context: vscode.ExtensionContext) {
     'View Changelog'
   );
   if (action === 'View Changelog') {
+    capture('changelog viewed', { previous_version: lastVersion, current_version: currentVersion });
     vscode.commands.executeCommand(
       'extension.open',
       'ashvinbondada.gossamer-preview',
@@ -33,9 +37,32 @@ async function showUpdateNotification(context: vscode.ExtensionContext) {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
+  const __activateStart = Date.now();
+  try { console.log('[gossamer] activate() called at ' + __activateStart); } catch {}
   showUpdateNotification(context);
   const server = new LiveReloadServer();
-  await server.start();
+
+  const ext = vscode.extensions.getExtension('ashvinbondada.gossamer-preview');
+  const version = (ext?.packageJSON?.version as string) ?? 'unknown';
+
+  // Defer PostHog init off the activation critical path — its SDK constructor
+  // can do nontrivial work (queue identify, set up timers) and we never want
+  // telemetry init to slow down the editor opening files on window reload.
+  setImmediate(() => {
+    try { initPostHog(vscode.env.machineId, version); } catch {}
+  });
+
+  // Start the server in the background. Do NOT await — if it hangs or fails,
+  // activation must still complete so the customEditor registers and any
+  // restored HTML tabs can be resolved (with a graceful error if needed).
+  const serverReady = server.start().catch((err) => {
+    captureException(err, { context: 'server_start' });
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(
+      `Gossamer Preview: failed to start preview server (${msg}). Reload window to retry.`
+    );
+    throw err;
+  });
 
   context.subscriptions.push({ dispose: () => { server.dispose(); disposeAllPreviews(); } });
 
@@ -75,22 +102,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       VIEW_TYPE,
-      new GossamerHtmlEditor(context, getPreviewUrl),
+      new GossamerHtmlEditor(context, getPreviewUrl, serverReady),
       { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: false }
     )
   );
 
   // Manual command: forces the preview panel (independent of custom editor binding).
-  const openCmd = vscode.commands.registerCommand('gossamer-preview.open', () => {
+  const openCmd = vscode.commands.registerCommand('gossamer-preview.open', async () => {
+    try { await serverReady; } catch {
+      vscode.window.showErrorMessage('Gossamer Preview: server failed to start. Reload window.');
+      return;
+    }
     const editor = vscode.window.activeTextEditor;
     let doc: vscode.TextDocument | undefined = editor?.document;
-    // If active tab is our custom editor, fall back to the active tab's URI.
     if (!doc) {
       const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
       if (tab?.input instanceof vscode.TabInputCustom && tab.input.viewType === VIEW_TYPE) {
         vscode.workspace.openTextDocument(tab.input.uri).then((d) => {
           if (d.isDirty) server.setBufferText(d.fileName, d.getText());
           showPreview(d.fileName, getPreviewUrl(d.fileName));
+          capture('preview opened', { method: 'command' });
         });
         return;
       }
@@ -103,6 +134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     }
     if (doc.isDirty) server.setBufferText(doc.fileName, doc.getText());
     showPreview(doc.fileName, getPreviewUrl(doc.fileName));
+    capture('preview opened', { method: 'command' });
   });
   context.subscriptions.push(openCmd);
 
@@ -112,7 +144,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     serverPort: () => server.port,
     urlPathFor: (fsPath: string) => server.setFile(fsPath),
   };
+  try {
+    console.log('[gossamer] activate complete in ' + (Date.now() - __activateStart) + 'ms');
+  } catch {}
   return exportedApi;
 }
 
-export function deactivate() {}
+export function deactivate() {
+  return shutdownPostHog();
+}

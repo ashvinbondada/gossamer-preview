@@ -1,11 +1,11 @@
-try { console.log('[gossamer] extension.js module loading at ' + Date.now()); } catch {}
 import * as vscode from 'vscode';
 import { LiveReloadServer } from './liveReload';
 import { registerDiffCommand } from './diffView';
 import { showPreview, disposeAllPreviews } from './previewPanel';
 import { GossamerHtmlEditor, VIEW_TYPE } from './customEditor';
 import { initPostHog, capture, captureException, shutdownPostHog } from './posthog';
-try { console.log('[gossamer] extension.js imports complete at ' + Date.now()); } catch {}
+import { perfMark } from './perf';
+perfMark('extension.js module loaded');
 
 interface ExtensionApi {
   serverPort(): number;
@@ -37,24 +37,23 @@ async function showUpdateNotification(context: vscode.ExtensionContext) {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
+  perfMark('activate() entry');
   const __activateStart = Date.now();
-  try { console.log('[gossamer] activate() called at ' + __activateStart); } catch {}
   showUpdateNotification(context);
+  perfMark('showUpdateNotification kicked off');
   const server = new LiveReloadServer();
+  perfMark('LiveReloadServer constructed');
 
   const ext = vscode.extensions.getExtension('ashvinbondada.gossamer-preview');
   const version = (ext?.packageJSON?.version as string) ?? 'unknown';
 
-  // Defer PostHog init off the activation critical path — its SDK constructor
-  // can do nontrivial work (queue identify, set up timers) and we never want
-  // telemetry init to slow down the editor opening files on window reload.
   setImmediate(() => {
+    perfMark('setImmediate: initPostHog starting');
     try { initPostHog(vscode.env.machineId, version); } catch {}
+    perfMark('setImmediate: initPostHog returned');
   });
 
-  // Start the server in the background. Do NOT await — if it hangs or fails,
-  // activation must still complete so the customEditor registers and any
-  // restored HTML tabs can be resolved (with a graceful error if needed).
+  perfMark('about to call server.start()');
   const serverReady = server.start().catch((err) => {
     captureException(err, { context: 'server_start' });
     const msg = err instanceof Error ? err.message : String(err);
@@ -63,6 +62,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     );
     throw err;
   });
+
+  perfMark('server.start() returned (Promise)');
+  serverReady.then(
+    (p) => perfMark('serverReady RESOLVED port=' + p),
+    (e) => perfMark('serverReady REJECTED ' + (e instanceof Error ? e.message : String(e)))
+  );
 
   context.subscriptions.push({ dispose: () => { server.dispose(); disposeAllPreviews(); } });
 
@@ -144,12 +149,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     serverPort: () => server.port,
     urlPathFor: (fsPath: string) => server.setFile(fsPath),
   };
-  try {
-    console.log('[gossamer] activate complete in ' + (Date.now() - __activateStart) + 'ms');
-  } catch {}
+  perfMark('activate() returning after ' + (Date.now() - __activateStart) + 'ms');
   return exportedApi;
 }
 
 export function deactivate() {
-  return shutdownPostHog();
+  // Fire-and-forget PostHog shutdown with a tight cap so we never block window
+  // reload on a network flush. If the SDK hangs, we'd rather lose a few queued
+  // events than freeze the editor.
+  try {
+    Promise.race([
+      shutdownPostHog(),
+      new Promise<void>((resolve) => setTimeout(resolve, 200)),
+    ]).catch(() => {});
+  } catch {}
+  // IMPORTANT: do NOT return a Promise here. VS Code awaits the deactivate
+  // return value, and any slow async work blocks reload.
 }

@@ -1,9 +1,19 @@
 import * as vscode from 'vscode';
 
-// Internal dev-only flag. Hard-coded false for shipped builds. Flip locally to
-// see extension-host perf timing in the "Gossamer Preview" output channel.
-// Not user-toggleable, not exposed as a setting.
+// Default false for shipped builds. Flip to true locally to emit per-step
+// timings to the "Gossamer Preview Perf" output channel.
 const PERF_HOST_ENABLED = false;
+
+// One-shot logger that writes to the same channel as perfScope. Useful for
+// activation-lifecycle marks that aren't a single scoped operation.
+let _stamp0 = 0;
+export function perfMark(name: string): void {
+  if (!PERF_HOST_ENABLED) return;
+  const ch = ensureChannel();
+  if (!ch) return;
+  if (_stamp0 === 0) _stamp0 = Date.now();
+  ch.appendLine(`[+${(Date.now() - _stamp0).toString().padStart(6)} ms] ${name}`);
+}
 
 let channel: vscode.OutputChannel | undefined;
 

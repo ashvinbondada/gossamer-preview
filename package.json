@@ -2,7 +2,7 @@
   "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
   "description": "The canvas for agentic coding. Live-preview HTML docs, UIs, and interfaces your AI agent generates.",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "publisher": "ashvinbondada",
   "icon": "icon.png",
   "engines": {

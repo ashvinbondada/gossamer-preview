@@ -45,44 +45,54 @@ export function buildToolbarMarkup(previewUrl: string, title: string): string {
   <iframe id="frame" src="about:blank" data-base-href="${escapeAttr(previewUrl)}"></iframe>
 
   <div class="toolbar" id="toolbar">
-    <div class="controls-left">
-      <button id="reload" title="Reload">⟳</button>
-      <button id="zoomOut" title="Zoom out (Cmd/Ctrl+-)">−</button>
-      <span class="zoom-label" id="zoomLabel">100%</span>
-      <button id="zoomIn" title="Zoom in (Cmd/Ctrl+=)">+</button>
-      <button id="zoomReset" title="Reset zoom (Cmd/Ctrl+0)">⟲</button>
-      <div class="divider"></div>
+    <div class="toolbar-row">
+      <div class="controls-left">
+        <button id="reload" title="Reload"><span id="reloadIcon">⟳</span></button>
+        <button id="zoomOut" title="Zoom out (Cmd/Ctrl+-)">−</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button id="zoomIn" title="Zoom in (Cmd/Ctrl+=)">+</button>
+        <div class="divider"></div>
+      </div>
+
+      <button class="find-trigger" id="findBtn" title="Find (Cmd/Ctrl+F)">
+        <span>⌕</span>
+        <span class="label">Find</span>
+      </button>
+
+      <div class="find-area" id="findArea">
+        <input id="findInput" type="text" placeholder="Find in page" autocomplete="off" />
+        <span class="count" id="findCount">0 / 0</span>
+        <div class="nav-group">
+          <button class="icon-btn" id="findPrev" title="Previous (Shift+Enter)">▲</button>
+          <button class="icon-btn" id="findNext" title="Next (Enter)">▼</button>
+        </div>
+        <button class="close-btn" id="findClose" title="Close (Esc)">✕</button>
+      </div>
+
+      <div class="controls-right">
+        <div class="divider"></div>
+        <button id="editSrc" title="Edit HTML source">✎ Edit</button>
+        <button id="copyFile" title="Copy relative path">
+          <span id="copyIcon">⎘</span>
+        </button>
+      </div>
     </div>
 
-    <button class="find-trigger" id="findBtn" title="Find (Cmd/Ctrl+F)">
-      <span>⌕</span>
-      <span class="label">Find</span>
-    </button>
-
-    <div class="find-area" id="findArea">
-      <input id="findInput" type="text" placeholder="Find in page" autocomplete="off" />
-      <span class="count" id="findCount">0 / 0</span>
-      <div class="nav-group">
-        <button class="icon-btn" id="findPrev" title="Previous (Shift+Enter)">▲</button>
-        <button class="icon-btn" id="findNext" title="Next (Enter)">▼</button>
-      </div>
-      <button class="close-btn" id="findClose" title="Close (Esc)">✕</button>
-
-      <div class="history" id="history">
+    <!-- History sits INSIDE the toolbar as a second row. When visible the
+         toolbar itself grows downward — it doesn't look like a separate panel
+         appearing under the toolbar; it looks like the toolbar expanded.
+         The .history-inner wrapper is REQUIRED: grid-template-rows: 0fr only
+         constrains explicit rows; with multiple children the grid creates
+         implicit auto-sized rows and never collapses to zero. Single wrapper
+         child + 0fr → true zero height when closed. */ -->
+    <div class="history" id="history">
+      <div class="history-inner">
         <div class="history-header">
           <span>Recent searches</span>
           <button class="history-clear" id="historyClear">Clear</button>
         </div>
         <div id="historyList"></div>
       </div>
-    </div>
-
-    <div class="controls-right">
-      <div class="divider"></div>
-      <button id="editSrc" title="Edit HTML source">✎ Edit</button>
-      <button id="copyFile" title="Copy relative path">
-        <span id="copyIcon">⎘</span>
-      </button>
     </div>
   </div>
 </div>`;
@@ -141,7 +151,9 @@ export function buildPreviewScript(title: string, copyPath?: string): string {
   function __mark() {}
 `;
   const clipDebug = CLIPBOARD_DEBUG_ENABLED ? `
-  // ===== CLIPBOARD DEBUG OVERLAY (dev-only) =====
+  // ===== DEBUG OVERLAY + HOST FORWARDING (dev-only) =====
+  // __clip writes to a small overlay in the iframe AND posts to the extension
+  // host so the host can tee it to a log file we tail from outside Cursor.
   function __clip(msg) {
     var el = document.getElementById('__gossamer_clip');
     if (!el) {
@@ -160,6 +172,11 @@ export function buildPreviewScript(title: string, copyPath?: string): string {
     el.textContent += '[' + t + '] ' + msg + '\\n';
     el.scrollTop = el.scrollHeight;
     try { console.log('[gossamer-clip]', msg); } catch (e) {}
+    // Forward to extension host so it can log to file.
+    try {
+      var api = window.__gossamerApi__ || (typeof acquireVsCodeApi === 'function' && (window.__gossamerApi__ = acquireVsCodeApi()));
+      if (api && api.postMessage) api.postMessage({ type: 'debug-log', msg: msg });
+    } catch (e) {}
   }
   __clip('parent script init');
   ` : `
@@ -171,10 +188,22 @@ ${clipDebug}
   var frame = document.getElementById('frame');
   var wrap = document.getElementById('wrap');
   var toolbar = document.getElementById('toolbar');
+
+  // Measure the toolbar's natural closed width once and pin it as a CSS var.
+  // Required because the browser cannot interpolate width:auto. Without this,
+  // width would snap from open to closed instead of animating, breaking the
+  // smooth contraction (and producing a wide rounded-square blob mid-frame).
+  // Use requestAnimationFrame so layout is settled before measuring.
+  requestAnimationFrame(function() {
+    var w = toolbar.getBoundingClientRect().width;
+    if (w > 0) toolbar.style.setProperty('--toolbar-closed-w', w + 'px');
+  });
+
   var zoom = 1;
   var zoomLabel = document.getElementById('zoomLabel');
   var FILENAME = ${JSON.stringify(title)};
   var COPY_TARGET = ${JSON.stringify(toCopy)};
+  __clip('[copy] FILENAME=' + JSON.stringify(${JSON.stringify(title)}) + ' COPY_TARGET=' + JSON.stringify(COPY_TARGET));
 
   __mark('elements queried');
 
@@ -196,10 +225,24 @@ ${clipDebug}
 
   document.getElementById('zoomIn').onclick = function() { setZoom(zoom + 0.1); };
   document.getElementById('zoomOut').onclick = function() { setZoom(zoom - 0.1); };
-  document.getElementById('zoomReset').onclick = function() { setZoom(1); };
-  document.getElementById('reload').onclick = function() { if (frame.contentWindow) frame.contentWindow.location.reload(); };
+  document.getElementById('reload').onclick = function() {
+    // Iframe is srcdoc-loaded, so contentWindow.location.reload() either blanks
+    // the page or throws (about:srcdoc has no fetchable URL). Ask the extension
+    // host to re-read the file and re-push a fresh srcdoc instead.
+    if (vscodeApi) vscodeApi.postMessage({ type: 'reload' });
+    var btn = document.getElementById('reload');
+    // Restart the animation cleanly if user mashes the button.
+    btn.classList.remove('flashing');
+    void btn.offsetWidth;
+    btn.classList.add('flashing');
+    setTimeout(function() { btn.classList.remove('flashing'); }, 950);
+  };
 
-  var vscodeApi = (typeof acquireVsCodeApi === 'function') ? acquireVsCodeApi() : null;
+  // acquireVsCodeApi can only be called ONCE per webview. Cache on window so
+  // every consumer (find history, postMessage callers) shares the single handle.
+  var vscodeApi = (typeof acquireVsCodeApi === 'function')
+    ? (window.__gossamerApi__ || (window.__gossamerApi__ = acquireVsCodeApi()))
+    : null;
   var editSrcBtn = document.getElementById('editSrc');
   editSrcBtn.onclick = function() { if (vscodeApi) vscodeApi.postMessage({ type: 'editSource' }); };
 
@@ -207,6 +250,10 @@ ${clipDebug}
   var copyBtn = document.getElementById('copyFile');
   var copyIcon = document.getElementById('copyIcon');
   copyBtn.onclick = function() {
+    copyBtn.classList.remove('flashing');
+    void copyBtn.offsetWidth;
+    copyBtn.classList.add('flashing');
+    setTimeout(function() { copyBtn.classList.remove('flashing'); }, 950);
     var done = function() {
       copyIcon.textContent = '✓';
       setTimeout(function() { copyIcon.textContent = '⎘'; }, 1200);
@@ -256,12 +303,39 @@ ${clipDebug}
   }
   function updateCount() { findCount.textContent = lastCurrent + ' / ' + lastTotal; }
 
-  // ===== history (session-local, in-memory) =====
+  // ===== history (persisted via vscodeApi.setState so it survives reloads) =====
   var historyEl = document.getElementById('history');
   var historyList = document.getElementById('historyList');
   var historyClear = document.getElementById('historyClear');
   var history = [];
   var historyIndex = -1;
+  // History saves on deliberate submit only (Enter, Esc-to-clear, close-find).
+  // Matches Chrome address bar / VS Code Find behavior. No mid-typing debounce
+  // — partial words never end up in history.
+
+  // Restore from webview state. vscodeApi may not exist yet at this point in
+  // the script — guard. State is opaque per-webview, perfect for this.
+  try {
+    var _api = (typeof acquireVsCodeApi === 'function') ? (window.__gossamerApi__ || (window.__gossamerApi__ = acquireVsCodeApi())) : null;
+    __clip('[hist] init: _api=' + !!_api);
+    if (_api) {
+      var saved = _api.getState && _api.getState();
+      __clip('[hist] saved state=' + JSON.stringify(saved));
+      if (saved && Array.isArray(saved.findHistory)) history = saved.findHistory.slice(0, 20);
+    }
+  } catch (e) { __clip('[hist] init threw: ' + e.message); }
+  __clip('[hist] history after init=' + JSON.stringify(history));
+  function persistHistory() {
+    try {
+      var api = window.__gossamerApi__;
+      __clip('[hist] persistHistory: api=' + !!api + ' history=' + JSON.stringify(history));
+      if (api && api.setState) {
+        var prev = (api.getState && api.getState()) || {};
+        api.setState(Object.assign({}, prev, { findHistory: history }));
+        __clip('[hist] setState done');
+      }
+    } catch (e) { __clip('[hist] persist threw: ' + e.message); }
+  }
 
   function renderHistory() {
     historyList.innerHTML = '';
@@ -282,7 +356,17 @@ ${clipDebug}
       historyList.appendChild(row);
     });
   }
-  function showHistory() { renderHistory(); historyEl.classList.add('visible'); }
+  function showHistory() {
+    // No searches yet -> nothing to show. An empty dropdown is just noise.
+    if (history.length === 0) { hideHistory(); return; }
+    renderHistory();
+    historyEl.classList.add('visible');
+  }
+  function scrollActiveIntoView() {
+    if (historyIndex < 0) { historyList.scrollTop = 0; return; }
+    var row = historyList.children[historyIndex];
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }
   function hideHistory() { historyEl.classList.remove('visible'); historyIndex = -1; }
   function applyHistory(i) {
     if (i < 0 || i >= history.length) return;
@@ -292,18 +376,34 @@ ${clipDebug}
     hideHistory();
   }
   function pushHistory(q) {
+    __clip('[hist] pushHistory called q=' + JSON.stringify(q));
     if (!q) return;
     history = history.filter(function(h) { return h !== q; });
     history.unshift(q);
     if (history.length > 20) history.length = 20;
+    __clip('[hist] after push, history=' + JSON.stringify(history));
+    persistHistory();
   }
-  historyClear.addEventListener('click', function(e) { e.preventDefault(); history = []; renderHistory(); });
+  historyClear.addEventListener('click', function(e) { e.preventDefault(); history = []; renderHistory(); persistHistory(); });
 
   function openFind() {
+    // Add .open and show history in the SAME frame so the expansion mirrors
+    // the close — width, height, and radius all start animating together with
+    // the same 420ms curve. The previous setTimeout(80ms) before showHistory
+    // made width animate alone for 80ms then height kicked in, producing a
+    // visible "quirk" where the two dimensions desynced near the end.
     toolbar.classList.add('open');
-    setTimeout(function() { findInput.focus(); findInput.select(); showHistory(); }, 80);
+    toolbar.classList.remove('dimmed');
+    if (dimTimer) clearTimeout(dimTimer);
+    showHistory();
+    // Focus the input on the next frame so the layout shift doesn't fight
+    // with focus-induced scroll. Doesn't affect the animation timing.
+    requestAnimationFrame(function() { findInput.focus(); findInput.select(); });
   }
   function clearInput() {
+    // Push the about-to-be-cleared search to history (this is the user's
+    // "I'm done with this query" signal — first Esc with text in field).
+    if (findInput.value) pushHistory(findInput.value);
     findInput.value = '';
     sendClear();
     lastTotal = 0; lastCurrent = 0;
@@ -313,13 +413,20 @@ ${clipDebug}
   }
   function closeFind() {
     if (findInput.value) pushHistory(findInput.value);
+    // All transitions (width, height, radius) run in lockstep at 420ms with
+    // the same curve, so the close looks like a single smooth contraction.
+    hideHistory();
     toolbar.classList.remove('open');
     findInput.value = '';
+    // Blur the find input so subsequent keystrokes don't land in the hidden
+    // field and trigger phantom searches. Push focus to the iframe so the
+    // user can keep typing into the previewed page if they want.
+    try { findInput.blur(); } catch (e) {}
+    try { if (frame && frame.contentWindow) frame.contentWindow.focus(); } catch (e) {}
     sendClear();
     lastTotal = 0; lastCurrent = 0;
     lastAcceptedSeq = -1;
     updateCount();
-    hideHistory();
   }
 
   findBtn.onclick = function() { toolbar.classList.contains('open') ? closeFind() : openFind(); };
@@ -328,10 +435,17 @@ ${clipDebug}
   findPrev.onclick = function() { sendNav(-1); };
 
   findInput.addEventListener('input', function() {
+    // If find isn't open, ignore any spurious input events. This prevents
+    // post-close keystrokes (caught while focus hadn't fully cleared) from
+    // re-triggering searches and highlighting the page.
+    if (!toolbar.classList.contains('open')) return;
     historyIndex = -1;
     var v = findInput.value;
-    if (v) { hideHistory(); sendFind(v); }
-    else { sendClear(); lastTotal = 0; lastCurrent = 0; updateCount(); showHistory(); }
+    if (v) {
+      hideHistory(); sendFind(v);
+    } else {
+      sendClear(); lastTotal = 0; lastCurrent = 0; updateCount(); showHistory();
+    }
   });
   findInput.addEventListener('focus', function() { if (!findInput.value) showHistory(); });
   document.addEventListener('mousedown', function(e) {
@@ -340,21 +454,27 @@ ${clipDebug}
 
   findInput.addEventListener('keydown', function(e) {
     var histVisible = historyEl.classList.contains('visible') && history.length > 0;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      __clip('[hist] arrow key=' + e.key + ' histVisible=' + histVisible + ' historyEl.visible=' + historyEl.classList.contains('visible') + ' history.len=' + history.length);
+    }
     if (e.key === 'ArrowDown' && histVisible) {
       e.preventDefault();
       historyIndex = Math.min(history.length - 1, historyIndex + 1);
       renderHistory();
+      scrollActiveIntoView();
       return;
     }
     if (e.key === 'ArrowUp' && histVisible) {
       e.preventDefault();
       historyIndex = Math.max(-1, historyIndex - 1);
       renderHistory();
+      scrollActiveIntoView();
       return;
     }
     if (e.key === 'Enter') {
       e.preventDefault();
       if (histVisible && historyIndex >= 0) { applyHistory(historyIndex); return; }
+      if (findInput.value) pushHistory(findInput.value);
       sendNav(e.shiftKey ? -1 : 1);
       return;
     }
@@ -535,6 +655,15 @@ ${clipDebug}
       if (!toolbar.classList.contains('open')) toolbar.classList.add('dimmed');
     }, 2200);
   }
+  // Any keyboard or input interaction with the toolbar counts as activity —
+  // otherwise the toolbar dims while the user is actively typing in the find
+  // input (since the mouse isn't moving). Call bumpToolbar directly so the
+  // wake sweep plays when transitioning from dimmed -> active via keyboard.
+  // Capture-phase so it fires even when the input has stopPropagation
+  // handlers downstream.
+  toolbar.addEventListener('keydown', bumpToolbar, true);
+  toolbar.addEventListener('input', bumpToolbar, true);
+  toolbar.addEventListener('focusin', bumpToolbar);
   if (wrap && wrap.addEventListener) {
     wrap.addEventListener('mousemove', bumpToolbar);
     toolbar.addEventListener('mouseenter', function() { toolbar.classList.remove('dimmed'); if (dimTimer) clearTimeout(dimTimer); });
@@ -609,18 +738,46 @@ export const PREVIEW_STYLES = `
        and compositor work, hurting first paint by 100-300ms in the webview. */
     background: rgba(20,20,22,0.94);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 999px;
+    /* 22px radius is clamped to half-height (~19px) on the closed pill so it
+       visually reads as a pill, and stays 22px when the toolbar expands —
+       so the corners never animate. Previously we transitioned 999px -> 22px
+       which produced a visible "corners pulse" mid-open because the effective
+       (clamped) radius peaks when the box is mid-size. */
+    border-radius: 22px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-    display: flex; align-items: center;
-    padding: 4px;
-    overflow: visible;
+    /* Column layout so an optional history row can stack underneath.
+       When history is hidden, .toolbar-row is the only visible child and the
+       toolbar matches its previous pill height exactly. */
+    display: flex; flex-direction: column;
+    padding: 0;  /* row provides its own 4px padding; doing it here would double up */
+    overflow: hidden;
     width: auto;
-    transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+    /* Smooth "rolling stop" easing — symmetric S-curve (Material standard).
+       The previous cubic-bezier(0.22, 1, 0.36, 1) front-loaded ~50% of the
+       motion in the first 30% of the duration, which read as a punch followed
+       by a long drift. (0.4, 0, 0.2, 1) gives gentle in, peak in the middle,
+       gentle out — verified frame-by-frame in toolbar-harness.html. */
+    transition: width 420ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 200ms ease;
     will-change: width;
     max-width: calc(100% - 32px);
     opacity: 1;
   }
+  .toolbar-row {
+    display: flex; align-items: center;
+    width: 100%;
+    padding: 4px;
+    box-sizing: border-box;
+  }
   .toolbar.dimmed { opacity: 0.25; }
+  /* When find is open the toolbar is actively in use — never dim it, even if
+     the dim class somehow lingers (e.g. opened from a dimmed state). */
+  .toolbar.open { opacity: 1 !important; }
+  /* When closed, --toolbar-closed-w is set via JS (one-time measure at init)
+     so width can interpolate. Browsers can't interpolate width: auto, so a
+     fit-content closed state would snap on close. Falls back to auto if JS
+     hasn't measured yet (initial paint). */
+  .toolbar { width: var(--toolbar-closed-w, auto); }
   .toolbar.open { width: min(640px, calc(100% - 32px)); }
 
   /* Warm orange rotating border that plays once when the toolbar wakes from idle.
@@ -642,7 +799,12 @@ export const PREVIEW_STYLES = `
     position: absolute;
     inset: -2px;
     z-index: -1;
-    border-radius: 999px;
+    /* Match the toolbar's 22px corners + 2px outset = 24px so the ring traces
+       the actual toolbar outline. Previously this was 999px which clamped to
+       half-height — fine for the closed pill but produced huge rounded corners
+       around the expanded (open + history) rectangle that didn't match the
+       toolbar's actual 22px corners. */
+    border-radius: 24px;
     border: 2px solid transparent;
     pointer-events: none;
     opacity: 0;
@@ -684,7 +846,61 @@ export const PREVIEW_STYLES = `
   }
   .toolbar button:hover { background: rgba(255,255,255,0.1); }
   .toolbar button.active { background: rgba(124,158,255,0.18); color: #fff; }
-  .toolbar .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+  /* Button affordance feedback: orange ember ring sweeping around the button,
+     reused from the toolbar wake animation. Trigger via .flashing class. */
+  @property --ember-angle {
+    syntax: '<angle>'; inherits: false; initial-value: 0deg;
+  }
+  /* position: relative is ALWAYS on, so adding .flashing doesn't trigger a
+     layout shift mid-frame (which reads as a subtle shape twitch). */
+  .toolbar button { position: relative; }
+  /* Icon-only buttons: force a square box so the ember ring stays a perfect
+     circle. Without this they're slightly wider than tall (from padding) and
+     the ring reads as an oval. */
+  #reload, #copyFile {
+    width: 28px; height: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+  .toolbar button.flashing::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    pointer-events: none;
+    background:
+      linear-gradient(rgba(20,20,22,0.94), rgba(20,20,22,0.94)) padding-box,
+      conic-gradient(
+        from var(--ember-angle),
+        rgba(255,140,60,0) 0deg,
+        rgba(255,140,60,0) 70deg,
+        rgba(255,160,70,0.95) 140deg,
+        rgba(255,210,90,1) 180deg,
+        rgba(255,160,70,0.95) 220deg,
+        rgba(255,140,60,0) 290deg,
+        rgba(255,140,60,0) 360deg
+      ) border-box;
+    will-change: --ember-angle, opacity;
+    animation: ember-ring-spin 900ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+  }
+  #reload.flashing #reloadIcon {
+    animation: reload-icon-spin 700ms cubic-bezier(0.22, 1, 0.36, 1) 1;
+  }
+  @keyframes ember-ring-spin {
+    0%   { --ember-angle: 0deg;   opacity: 0; }
+    15%  { opacity: 1; }
+    70%  { --ember-angle: 360deg; opacity: 1; }
+    100% { --ember-angle: 360deg; opacity: 0; }
+  }
+  @keyframes reload-icon-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  #reloadIcon { display: inline-block; }
+  .toolbar .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; flex-shrink: 0; user-select: none; -webkit-user-select: none; }
   .toolbar .divider { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; flex-shrink: 0; }
 
   .controls-left, .controls-right { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
@@ -703,13 +919,21 @@ export const PREVIEW_STYLES = `
   .find-area {
     position: relative;
     display: inline-flex; align-items: center;
-    width: 0; overflow: hidden;
+    overflow: hidden;
     opacity: 0;
-    flex: 1;
-    transition: opacity 200ms ease 120ms, width 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    /* Animate flex-grow, not width. Width:0 + flex:1 fight each other and
+       produce an overshoot — the right-side buttons bounce ~30px right then
+       snap back. flex-grow alone interpolates monotonically. */
+    flex-grow: 0;
+    flex-basis: 0;
+    min-width: 0;
+    transition: opacity 240ms ease 140ms, flex-grow 420ms cubic-bezier(0.4, 0, 0.2, 1);
     margin: 0;
   }
-  .toolbar.open .find-area { width: 100%; opacity: 1; margin: 0 4px; }
+  /* Once the find pill is open and the expand finishes, drop the overflow clip
+     so absolutely-positioned children can extend below. Delay matches the
+     flex-grow transition (420ms). */
+  .toolbar.open .find-area { flex-grow: 1; opacity: 1; margin: 0 4px; overflow: visible; transition: opacity 240ms ease 140ms, flex-grow 420ms cubic-bezier(0.4, 0, 0.2, 1), overflow 0s linear 420ms; }
   .find-area input {
     background: transparent;
     color: #fff;
@@ -721,29 +945,46 @@ export const PREVIEW_STYLES = `
     min-width: 140px;
     padding: 6px 8px;
   }
-  .find-area input::placeholder { color: #8a8a93; opacity: 1; }
+  .find-area input::placeholder { color: #5a5a62; opacity: 1; -webkit-text-fill-color: #5a5a62; }
   .find-area .count { color: #b0b0b8; font-size: 11.5px; padding: 0 10px; font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; flex-shrink: 0; }
   .find-area .nav-group { display: inline-flex; gap: 2px; flex-shrink: 0; }
   .find-area .icon-btn { padding: 6px 10px; }
   .find-area .close-btn { padding: 6px 10px; }
 
+  /* History row — lives INSIDE the toolbar as a second flex row. Uses the
+     grid-template-rows 0fr -> 1fr trick to animate height smoothly.
+     CRITICAL: .history must have EXACTLY ONE child (.history-inner). With
+     multiple children grid auto-creates implicit rows that ignore 0fr, so the
+     row never collapses to zero. */
   .history {
-    position: absolute; top: 100%; margin-top: 8px;
-    left: 0; right: 0;
-    background: rgba(20,20,22,0.97);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
-    padding: 6px;
-    display: none;
-    z-index: 11;
-    max-height: 260px;
-    overflow-y: auto;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    /* Match the toolbar's 420ms / cubic-bezier(0.4, 0, 0.2, 1) curve so the
+       height grows in sync with the width — feels like one smooth expansion. */
+    transition:
+      grid-template-rows 420ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 280ms ease,
+      margin-top 420ms cubic-bezier(0.4, 0, 0.2, 1),
+      padding 420ms cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: 0;
+    padding: 0 4px;
   }
-  .history.visible { display: block; }
+  .history-inner { min-height: 0; overflow: hidden; }
+  .history.visible {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 6px;
+    padding: 4px 4px 8px;
+  }
+  /* On close, the history's height transition runs in lockstep with the
+     toolbar's width and border-radius transitions, all at 420ms with the
+     same curve. The blob bug (wide rounded-square mid-collapse) only appears
+     when width SNAPS instead of animating — fixed by the explicit
+     --toolbar-closed-w variable above so width can interpolate. */
   .history-header {
     font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
-    padding: 6px 12px 4px;
+    padding: 6px 12px 8px;
     display: flex; justify-content: space-between; align-items: center;
   }
   .history-clear {
@@ -752,16 +993,26 @@ export const PREVIEW_STYLES = `
     font-family: inherit; text-transform: none; letter-spacing: 0;
   }
   .history-clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+  /* Show only the top 3 items; arrow keys scroll the rest. Each item is
+     ~36px tall (8+8 padding + 13px line) so 3 * 36 = 108px gives a clean cut. */
+  #historyList {
+    max-height: 108px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  #historyList::-webkit-scrollbar { width: 6px; }
+  #historyList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
   .history-item {
     display: flex; align-items: center; gap: 10px;
     padding: 8px 12px;
     color: #d4d4dc; font-size: 13px;
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
   }
   .history-item .ic { color: #6a6a72; font-size: 12px; }
   .history-item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .history-item:hover, .history-item.active { background: rgba(255,255,255,0.07); }
+  .history-item:hover { background: rgba(255,255,255,0.06); }
+  .history-item.active { background: rgba(124,158,255,0.16); }
   .history-item.active { background: rgba(124,158,255,0.14); }
   .history-empty { color: #6a6a72; font-size: 12px; padding: 14px 12px; text-align: center; font-style: italic; }
 `;

@@ -1,7 +1,7 @@
 {
   "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
-  "description": "Instantly preview AI-generated HTML files in Cursor/VS Code with live reload, find-in-page, zoom, and source editing",
+  "description": "The canvas for agentic coding. Live-preview HTML docs, UIs, and interfaces your AI agent generates.",
   "version": "2.1.2",
   "publisher": "ashvinbondada",
   "icon": "icon.png",

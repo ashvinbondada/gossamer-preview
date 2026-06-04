@@ -2,7 +2,7 @@
 
 ![Gossamer](https://raw.githubusercontent.com/ashvinbondada/gossamer-preview/main/gossamer.png)
 
-Instantly preview AI-generated HTML files in Cursor/VS Code with live reload, find-in-page, zoom, and source editing — without leaving your editor.
+**The canvas for agentic coding.** Live-preview the HTML docs, UIs, and interfaces your AI agent generates — auto-opened, live-reloaded, and rendered right inside your editor.
 
 ## The Workflow
 

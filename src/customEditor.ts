@@ -152,6 +152,21 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
         } catch (err) {
           captureException(err, { context: 'host_key_dispatch' });
         }
+      } else if (msg?.type === 'debug-log') {
+        try {
+          const fs = require('fs');
+          fs.appendFileSync('/tmp/gossamer-debug.log', `[${new Date().toISOString()}] [webview] ${msg.msg}\n`);
+        } catch {}
+      } else if (msg?.type === 'reload') {
+        try {
+          const { wrapWithBase } = await import('./previewHtml');
+          const raw = this.getRawHtml(document.uri.fsPath);
+          const wrapped = wrapWithBase(raw, this.getPreviewUrl(document.uri.fsPath));
+          panel.webview.postMessage({ type: 'gossamer-srcdoc', html: wrapped });
+          capture('reload clicked');
+        } catch (err) {
+          captureException(err, { context: 'reload_button' });
+        }
       }
     });
   }

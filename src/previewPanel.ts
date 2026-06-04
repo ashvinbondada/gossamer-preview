@@ -42,6 +42,21 @@ export function showPreview(fsPath: string, previewUrl: string, getRawHtml?: (fs
       } catch (err) {
         captureException(err, { context: 'host_key_dispatch' });
       }
+    } else if (msg?.type === 'debug-log') {
+      try {
+        const fs = require('fs');
+        fs.appendFileSync('/tmp/gossamer-debug.log', `[${new Date().toISOString()}] [webview] ${msg.msg}\n`);
+      } catch {}
+    } else if (msg?.type === 'reload') {
+      if (!getRawHtml) return;
+      try {
+        const raw = getRawHtml(fsPath);
+        const wrapped = wrapWithBase(raw, previewUrl);
+        panel.webview.postMessage({ type: 'gossamer-srcdoc', html: wrapped });
+        capture('reload clicked');
+      } catch (err) {
+        captureException(err, { context: 'reload_button' });
+      }
     }
   });
   panel.onDidDispose(() => panels.delete(fsPath));

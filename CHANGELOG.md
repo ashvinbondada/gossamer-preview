@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.3]
+
+### 🐛 Fixed
+
+- **Reload button actually works now.** The toolbar's ⟳ button was a no-op since 2.1.0 because the iframe switched to inline `srcdoc` hydration. Clicking it now re-reads the file and re-renders.
+- **Find history is saved and persisted.** Search queries now save to history on Enter, Esc-to-clear, or close-find. History survives window reloads. Press Cmd/Ctrl+F → ↓ to browse recent searches.
+- **Find history dropdown shows up.** Was rendered into the DOM but invisible because the parent had `overflow: hidden`.
+
+### ✨ Polish
+
+- **Smoother Find pill animation.** Open and close now use a matched 420ms ease — width, height, and corners animate together in lockstep. No more corner pulse, button bounce, or "giant blob" mid-revert.
+- **Find pill expands like the toolbar growing**, not like a separate dropdown appearing under it.
+- **Reload + copy buttons get an orange ember ring** when clicked so you know the action fired. Reload icon spins.
+- **Removed reset-zoom button.** Cmd/Ctrl+0 still works.
+- **Zoom % is no longer text-selectable.**
+- **Find placeholder text reads as placeholder**, not active input.
+
+### ⚙️ Under the hood
+
+- Telemetry events actually reach PostHog now — the SDK was batching events that died at deactivate. Per-event sends with `keepalive: true` so reload still terminates cleanly.
+
 ## [2.1.2]
 
 - **Copy button is now icon-only.** Long filenames were pushing the Find pill off the toolbar. The filename label has been removed; tooltip still says "Copy relative path" so the affordance is unchanged.

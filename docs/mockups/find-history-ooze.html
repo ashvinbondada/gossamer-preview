@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Find History — Liquid Ooze Variants</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    background: #0d0d0f;
+    color: #e6e6e6;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  }
+  body {
+    padding: 64px 24px 200px;
+    display: flex; flex-direction: column; align-items: center; gap: 80px;
+  }
+  h1 { margin: 0 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: #fff; }
+  .sub { color: #8a8a93; font-size: 12.5px; margin-bottom: 32px; max-width: 540px; text-align: center; line-height: 1.55; }
+  .variant {
+    width: min(680px, 100%);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .variant-label {
+    font-size: 11px; color: #8a8a93; text-transform: uppercase; letter-spacing: 0.12em;
+    margin-bottom: 18px;
+  }
+  .variant-note {
+    font-size: 12px; color: #6a6a72; margin-top: 18px; max-width: 480px; text-align: center; line-height: 1.55;
+  }
+
+  /* ====== Shared toolbar shell ====== */
+  .toolbar-shell {
+    width: 100%;
+    display: flex; justify-content: center;
+    /* Big play-area so the dropdown has room to ooze. */
+    padding-top: 12px; padding-bottom: 240px;
+  }
+  .pill {
+    position: relative;
+    background: rgba(20,20,22,0.86);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 999px;
+    padding: 6px 6px 6px 16px;
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 44px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.03) inset,
+      0 12px 32px rgba(0,0,0,0.4);
+  }
+  .pill .icon { color: #b0b0b8; font-size: 13px; }
+  .pill input {
+    background: transparent; border: 0; outline: 0;
+    color: #fff; font-size: 13.5px; font-family: inherit;
+    width: 320px;
+  }
+  .pill input::placeholder { color: #5a5a62; }
+  .pill .count { color: #b0b0b8; font-size: 11.5px; min-width: 48px; text-align: right; }
+  .pill .nav { display: inline-flex; gap: 2px; }
+  .pill button {
+    background: transparent; border: 0; color: #b0b0b8; cursor: pointer;
+    padding: 6px 8px; font-size: 11px; border-radius: 999px;
+  }
+  .pill button:hover { background: rgba(255,255,255,0.07); color: #e6e6e6; }
+  .pill .close { padding: 6px 10px; }
+
+
+  /* ============================================================
+     VARIANT A — "ooze": dropdown is a continuation of the pill,
+     shares the pill's background, fades into a teardrop below.
+     ============================================================ */
+  .a .pill { border-radius: 999px 999px 22px 22px; }
+  .a .drop {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    margin-top: -1px;
+    background:
+      linear-gradient(180deg, rgba(20,20,22,0.86) 0%, rgba(20,20,22,0.82) 80%, rgba(20,20,22,0.78) 100%);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-top: none;
+    border-radius: 0 0 22px 22px;
+    padding: 8px 8px 12px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.45);
+  }
+  /* The "drip" — a tiny teardrop hanging off the bottom-center of the dropdown. */
+  .a .drop::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -10px;
+    transform: translateX(-50%);
+    width: 14px; height: 14px;
+    background: rgba(20,20,22,0.86);
+    backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-top: none; border-left: none;
+    border-radius: 0 0 50% 50% / 0 0 60% 60%;
+    transform: translateX(-50%) rotate(45deg);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+  }
+  .a .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .a .item:hover { background: rgba(255,255,255,0.06); }
+  .a .item.active { background: rgba(124,158,255,0.16); }
+  .a .item .ic { color: #6a6a72; font-size: 12px; }
+  .a .item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+  .a .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 12px 4px;
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .a .header .clear { color: #6a6a72; background: transparent; border: 0; cursor: pointer; font-size: 10.5px; padding: 2px 6px; border-radius: 4px; text-transform: none; letter-spacing: 0; }
+  .a .header .clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+
+
+  /* ============================================================
+     VARIANT B — "metaball ooze": dropdown appears separated from
+     the pill but joined by a goo blob (SVG filter, true liquid).
+     ============================================================ */
+  .b-wrap { position: relative; filter: url(#goo); }
+  .b .pill { z-index: 2; }
+  .b .drop {
+    position: absolute;
+    top: calc(100% + 14px); left: 50%; transform: translateX(-50%);
+    width: calc(100% - 24px);
+    background: rgba(20,20,22,0.92);
+    border-radius: 22px;
+    padding: 10px 8px 12px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.45);
+    z-index: 1;
+  }
+  /* A small invisible "neck" between the pill and the drop. SVG goo merges
+     them visually so they look like one liquid body separated by a stretch. */
+  .b .neck {
+    position: absolute;
+    top: 100%; left: 50%; transform: translateX(-50%);
+    width: 48px; height: 24px;
+    background: rgba(20,20,22,0.92);
+    border-radius: 50%;
+    z-index: 1;
+  }
+  .b .item, .b .header { /* reuse styles via class lookalikes */
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .b .item:hover { background: rgba(255,255,255,0.06); }
+  .b .item.active { background: rgba(124,158,255,0.16); }
+  .b .item .ic { color: #6a6a72; font-size: 12px; }
+  .b .item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+  .b .header {
+    justify-content: space-between;
+    padding: 6px 12px 4px;
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+    cursor: default;
+  }
+  /* After the goo merges them, real text/icons inside need to render ABOVE
+     the filter so they're not blurred. Move them out of the goo-filtered
+     layer using a separate sibling. */
+
+
+  /* ============================================================
+     VARIANT C — "glass droplet": pill stays a pill; dropdown is
+     a floating glass capsule below, gently overlapping with a
+     bezier curve "tail" connecting them. Refraction via heavy
+     blur and a subtle inner glow.
+     ============================================================ */
+  .c .pill {
+    border-radius: 999px;
+    background: rgba(28,28,32,0.55);
+    border: 1px solid rgba(255,255,255,0.09);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 16px 40px rgba(0,0,0,0.5);
+  }
+  .c .drop {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0; right: 0;
+    background: rgba(28,28,32,0.55);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 24px;
+    padding: 10px 8px 12px;
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 24px 48px rgba(0,0,0,0.5);
+  }
+  /* Tail: a small circle at the top of the dropdown, blurred, suggesting
+     the droplet just detached from the pill. */
+  .c .drop::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: -16px;
+    width: 14px; height: 14px;
+    background: rgba(28,28,32,0.55);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 50%;
+    transform: translateX(-50%);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+  }
+  .c .item, .c .header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 14px;
+    cursor: pointer;
+  }
+  .c .item:hover { background: rgba(255,255,255,0.06); }
+  .c .item.active { background: rgba(124,158,255,0.16); }
+  .c .item .ic { color: #6a6a72; font-size: 12px; }
+  .c .item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+  .c .header {
+    justify-content: space-between;
+    padding: 6px 12px 4px;
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+    cursor: default;
+  }
+  .c .header .clear { color: #6a6a72; background: transparent; border: 0; cursor: pointer; font-size: 10.5px; padding: 2px 6px; border-radius: 4px; text-transform: none; letter-spacing: 0; }
+  .c .header .clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+
+
+  /* ============================================================
+     VARIANT D — "stretched body": the pill's bottom edge ELONGATES
+     down into the dropdown — one continuous body, no separation,
+     no gap. The most liquid-feeling option. Uses a single rounded
+     shape that's just much taller.
+     ============================================================ */
+  .d .pill-and-drop {
+    background: rgba(20,20,22,0.86);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 22px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.03) inset,
+      0 16px 36px rgba(0,0,0,0.45);
+    overflow: hidden;
+    width: max-content;
+  }
+  .d .pill-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 6px 6px 16px;
+    height: 44px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .d .pill-row input {
+    background: transparent; border: 0; outline: 0;
+    color: #fff; font-size: 13.5px; font-family: inherit;
+    width: 320px;
+  }
+  .d .pill-row input::placeholder { color: #5a5a62; }
+  .d .pill-row .icon { color: #b0b0b8; font-size: 13px; }
+  .d .pill-row .count { color: #b0b0b8; font-size: 11.5px; min-width: 48px; text-align: right; }
+  .d .pill-row .nav { display: inline-flex; gap: 2px; }
+  .d .pill-row button { background: transparent; border: 0; color: #b0b0b8; cursor: pointer; padding: 6px 8px; font-size: 11px; border-radius: 999px; }
+  .d .pill-row button:hover { background: rgba(255,255,255,0.07); color: #e6e6e6; }
+  .d .drop-section { padding: 8px 8px 10px; }
+  .d .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 12px 4px;
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .d .header .clear { color: #6a6a72; background: transparent; border: 0; cursor: pointer; font-size: 10.5px; padding: 2px 6px; border-radius: 4px; text-transform: none; letter-spacing: 0; }
+  .d .header .clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+  .d .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .d .item:hover { background: rgba(255,255,255,0.06); }
+  .d .item.active { background: rgba(124,158,255,0.16); }
+  .d .item .ic { color: #6a6a72; font-size: 12px; }
+  .d .item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+  <h1>Find-history dropdown — liquid variants</h1>
+  <div class="sub">Four takes on the dropdown oozing out of the find pill. All use real blur + saturate for glass; B uses an SVG metaball filter for true goo physics.</div>
+
+  <!-- ============================================================
+       VARIANT A — Continuous pill, dropdown shares the body
+       ============================================================ -->
+  <div class="variant a">
+    <div class="variant-label">A · Continuous body (pill → dropdown)</div>
+    <div class="toolbar-shell">
+      <div class="pill">
+        <span class="icon">⌕</span>
+        <input value="hello" />
+        <span class="count">2 / 7</span>
+        <span class="nav">
+          <button>▲</button>
+          <button>▼</button>
+        </span>
+        <button class="close">✕</button>
+        <div class="drop">
+          <div class="header"><span>Recent searches</span><button class="clear">Clear</button></div>
+          <div class="item active"><span class="ic">⌕</span><span class="text">redline</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">hello world</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">function declaration</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="variant-note">Pill flattens its bottom corners; dropdown extrudes from underneath as one continuous shape. Subtle teardrop at the bottom-center hints at "still dripping."</div>
+  </div>
+
+
+  <!-- ============================================================
+       VARIANT B — Metaball goo (SVG filter, separated bodies)
+       ============================================================ -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <filter id="goo">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+        <feColorMatrix in="blur" type="matrix"
+          values="1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0 0 0 22 -10"
+          result="goo"/>
+        <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
+      </filter>
+    </defs>
+  </svg>
+  <div class="variant b">
+    <div class="variant-label">B · Metaball ooze (SVG goo filter)</div>
+    <div class="toolbar-shell">
+      <div class="b-wrap">
+        <div class="pill">
+          <span class="icon">⌕</span>
+          <input value="hello" />
+          <span class="count">2 / 7</span>
+          <span class="nav"><button>▲</button><button>▼</button></span>
+          <button class="close">✕</button>
+        </div>
+        <div class="neck"></div>
+        <div class="drop">
+          <div class="header"><span>Recent searches</span></div>
+          <div class="item active"><span class="ic">⌕</span><span class="text">redline</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">hello world</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">function declaration</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="variant-note">SVG goo filter physically merges nearby shapes — the gap between the pill and the dropdown becomes a liquid bridge. Tradeoff: the filter also blurs text inside, so this needs work (move text out of the filtered group). Currently shown as "visual concept" only.</div>
+  </div>
+
+
+  <!-- ============================================================
+       VARIANT C — Floating glass droplet
+       ============================================================ -->
+  <div class="variant c">
+    <div class="variant-label">C · Detached glass droplet</div>
+    <div class="toolbar-shell">
+      <div class="pill">
+        <span class="icon">⌕</span>
+        <input value="hello" />
+        <span class="count">2 / 7</span>
+        <span class="nav"><button>▲</button><button>▼</button></span>
+        <button class="close">✕</button>
+        <div class="drop">
+          <div class="header"><span>Recent searches</span><button class="clear">Clear</button></div>
+          <div class="item active"><span class="ic">⌕</span><span class="text">redline</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">hello world</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">function declaration</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="variant-note">Pill is its own glass body; dropdown is a separate glass droplet that just detached. Tiny circle above the dropdown hints at the "drop point." Heavier blur and saturation → more liquid-glass feel.</div>
+  </div>
+
+
+  <!-- ============================================================
+       VARIANT D — Single elongated body
+       ============================================================ -->
+  <div class="variant d">
+    <div class="variant-label">D · Single stretched body</div>
+    <div class="toolbar-shell">
+      <div class="pill-and-drop">
+        <div class="pill-row">
+          <span class="icon">⌕</span>
+          <input value="hello" />
+          <span class="count">2 / 7</span>
+          <span class="nav"><button>▲</button><button>▼</button></span>
+          <button class="close">✕</button>
+        </div>
+        <div class="drop-section">
+          <div class="header"><span>Recent searches</span><button class="clear">Clear</button></div>
+          <div class="item active"><span class="ic">⌕</span><span class="text">redline</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">hello world</span></div>
+          <div class="item"><span class="ic">⌕</span><span class="text">function declaration</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="variant-note">No "dropdown" at all — the pill just got taller. One continuous shape, hairline divider between input row and history. Calmest, most predictable; least "liquid" but most refined.</div>
+  </div>
+
+</body>
+</html>

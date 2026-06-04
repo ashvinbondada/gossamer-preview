@@ -52,6 +52,16 @@ export function connectPostHog(): void {
     _client = new PostHog(apiKey, {
       host: process.env.POSTHOG_HOST || POSTHOG_DEFAULT_HOST,
       enableExceptionAutocapture: true,
+      flushAt: 1,
+      flushInterval: 0,
+      // Custom fetch that adds keepalive:true so in-flight requests don't
+      // hold the extension host alive. With keepalive, the OS finishes the
+      // request even if our process exits — meaning window reload no longer
+      // waits on PostHog's open sockets. This is the same trick browsers use
+      // for navigator.sendBeacon.
+      fetch: function(url: string, options: any) {
+        return (global as any).fetch(url, { ...options, keepalive: true });
+      },
     });
     _client.identify({
       distinctId: _distinctId,

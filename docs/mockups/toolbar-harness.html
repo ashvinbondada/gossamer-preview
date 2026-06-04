@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Toolbar Harness — Find expand/collapse + history</title>
+<style>
+  /* ==== Verbatim copy of the toolbar styles from previewHtml.ts ====
+     If you change toolbar/find/history styles, copy them here too — and once
+     the bug is fixed in the harness, port back to previewHtml.ts. */
+
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  }
+
+  /* Fake page content behind the toolbar so contrast is visible */
+  .page-content {
+    padding: 100px 60px 60px;
+    font-family: Georgia, serif;
+    color: #333;
+  }
+  .page-content h1 { text-align: center; font-size: 28px; margin: 0 0 12px; }
+  .page-content .sub { text-align: center; color: #666; margin-bottom: 30px; }
+  .page-content p { line-height: 1.6; max-width: 720px; margin: 0 auto 18px; }
+
+  /* Harness controls — fixed at the very bottom of the viewport */
+  .harness-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #0d0d0f;
+    color: #e6e6e6;
+    padding: 10px 16px;
+    display: flex; gap: 12px; align-items: center;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    z-index: 9999;
+    font: 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .harness-bar button {
+    background: #2a2a30; border: 1px solid #444; color: #e6e6e6;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font: inherit;
+  }
+  .harness-bar button:hover { background: #3a3a40; }
+  .harness-bar code {
+    background: #1a1a1f; padding: 2px 6px; border-radius: 4px;
+    font: 11px 'SF Mono', monospace;
+  }
+  .harness-bar .spacer { flex: 1; }
+  .harness-bar .metrics { color: #8a8a93; font: 11px 'SF Mono', monospace; }
+
+  /* ===========================================================
+     TOOLBAR STYLES — copied from previewHtml.ts
+     =========================================================== */
+  .toolbar {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(20,20,22,0.94);
+    color: #e6e6e6;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    display: flex; flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    width: auto;
+    transition: width 420ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 200ms ease;
+    will-change: width;
+    max-width: calc(100% - 32px);
+    opacity: 1;
+  }
+  .toolbar-row {
+    display: flex; align-items: center;
+    width: 100%;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  .toolbar { width: var(--toolbar-closed-w, auto); }
+  .toolbar.open { width: min(640px, calc(100% - 32px)); }
+
+  .toolbar button {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 100ms ease;
+    font-family: inherit;
+    flex-shrink: 0; white-space: nowrap;
+    position: relative;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,0.1); }
+
+  #reload, #copyFile {
+    width: 28px; height: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+  .toolbar .zoom-label { color: #b0b0b8; font-size: 11px; padding: 0 6px; font-variant-numeric: tabular-nums; flex-shrink: 0; user-select: none; -webkit-user-select: none; }
+  .toolbar .divider { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 4px; flex-shrink: 0; }
+  .controls-left, .controls-right { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
+  .find-trigger {
+    background: transparent; color: #e6e6e6; border: none; cursor: pointer;
+    border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0; white-space: nowrap;
+    font-family: inherit;
+  }
+  .find-trigger:hover { background: rgba(255,255,255,0.1); }
+  .toolbar.open .find-trigger { padding: 6px 8px; }
+  .toolbar.open .find-trigger .label { display: none; }
+
+  .find-area {
+    position: relative;
+    display: inline-flex; align-items: center;
+    overflow: hidden;
+    opacity: 0;
+    flex-grow: 0;
+    flex-basis: 0;
+    min-width: 0;
+    transition: opacity 240ms ease 140ms, flex-grow 420ms cubic-bezier(0.4, 0, 0.2, 1);
+    margin: 0;
+  }
+  .toolbar.open .find-area { flex-grow: 1; opacity: 1; margin: 0 4px; overflow: visible; transition: opacity 240ms ease 140ms, flex-grow 420ms cubic-bezier(0.4, 0, 0.2, 1), overflow 0s linear 420ms; }
+  .find-area input {
+    background: transparent;
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    caret-color: #fff;
+    border: none; outline: none;
+    font-family: inherit; font-size: 13.5px;
+    flex: 1 1 auto;
+    min-width: 140px;
+    padding: 6px 8px;
+  }
+  .find-area input::placeholder { color: #5a5a62; opacity: 1; -webkit-text-fill-color: #5a5a62; }
+  .find-area .count { color: #b0b0b8; font-size: 11.5px; padding: 0 10px; font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; flex-shrink: 0; }
+  .find-area .nav-group { display: inline-flex; gap: 2px; flex-shrink: 0; }
+  .find-area .icon-btn { padding: 6px 10px; }
+  .find-area .close-btn { padding: 6px 10px; }
+
+  .history {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 420ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 280ms ease,
+      margin-top 420ms cubic-bezier(0.4, 0, 0.2, 1),
+      padding 420ms cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: 0;
+    padding: 0 4px;
+  }
+  .history-inner { min-height: 0; overflow: hidden; }
+  .history.visible {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 6px;
+    padding: 4px 4px 8px;
+  }
+  .history-header {
+    font-size: 10.5px; color: #6a6a72; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 6px 12px 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .history-clear {
+    background: transparent; border: none; color: #6a6a72; cursor: pointer;
+    font-size: 10.5px; padding: 2px 6px; border-radius: 4px;
+    font-family: inherit; text-transform: none; letter-spacing: 0;
+  }
+  .history-clear:hover { color: #e6e6e6; background: rgba(255,255,255,0.06); }
+  #historyList {
+    max-height: 108px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  #historyList::-webkit-scrollbar { width: 6px; }
+  #historyList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
+  .history-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    color: #d4d4dc; font-size: 13px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .history-item .ic { color: #6a6a72; font-size: 12px; }
+  .history-item .text { flex: 1; font-family: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item:hover { background: rgba(255,255,255,0.06); }
+  .history-item.active { background: rgba(124,158,255,0.16); }
+
+  /* A wrapper that simulates the .frame-wrap parent. */
+  .frame-wrap { position: relative; min-height: 80vh; }
+
+  /* Debug outline mode — drawn on demand */
+  body.debug .toolbar { outline: 2px solid lime !important; }
+  body.debug .toolbar-row { outline: 1px solid orange !important; }
+  body.debug .history { outline: 1px solid magenta !important; }
+  body.debug .find-area { outline: 1px solid cyan !important; }
+</style>
+</head>
+<body>
+<div class="frame-wrap">
+  <div class="page-content">
+    <h1>Subcontracting Agreement</h1>
+    <div class="sub">(Redlined — Sample, Inc. Proposed Changes — June 1, 2026)</div>
+    <p>This is fake page content sitting behind the floating toolbar. The toolbar should look identical here as inside the extension: same opaque pill, same expanded width with find open, same history row when there's history.</p>
+    <p>Use the dev controls at the bottom to toggle states. Or drive this page with Playwright.</p>
+  </div>
+
+  <div class="toolbar" id="toolbar">
+    <div class="toolbar-row">
+      <div class="controls-left">
+        <button id="reload" title="Reload"><span id="reloadIcon">⟳</span></button>
+        <button id="zoomOut" title="Zoom out">−</button>
+        <span class="zoom-label">100%</span>
+        <button id="zoomIn" title="Zoom in">+</button>
+        <div class="divider"></div>
+      </div>
+      <button class="find-trigger" id="findBtn"><span>⌕</span><span class="label">Find</span></button>
+      <div class="find-area" id="findArea">
+        <input id="findInput" type="text" placeholder="Find in page" autocomplete="off" />
+        <span class="count">0 / 0</span>
+        <div class="nav-group">
+          <button class="icon-btn">▲</button>
+          <button class="icon-btn">▼</button>
+        </div>
+        <button class="close-btn" id="findClose">✕</button>
+      </div>
+      <div class="controls-right">
+        <div class="divider"></div>
+        <button id="editSrc"><span>✎</span> Edit</button>
+        <button id="copyFile"><span id="copyIcon">⎘</span></button>
+      </div>
+    </div>
+    <div class="history" id="history">
+      <div class="history-inner">
+        <div class="history-header">
+          <span>Recent searches</span>
+          <button class="history-clear" id="historyClear">Clear</button>
+        </div>
+        <div id="historyList">
+          <div class="history-item active"><span class="ic">⌕</span><span class="text">redline</span></div>
+          <div class="history-item"><span class="ic">⌕</span><span class="text">subcontracting agreement</span></div>
+          <div class="history-item"><span class="ic">⌕</span><span class="text">function declaration</span></div>
+          <div class="history-item"><span class="ic">⌕</span><span class="text">hello world</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="harness-bar">
+  <button id="btn-open">Open Find</button>
+  <button id="btn-close">Close Find</button>
+  <button id="btn-history">Toggle history</button>
+  <button id="btn-debug">Toggle outlines</button>
+  <span class="spacer"></span>
+  <span class="metrics" id="metrics"></span>
+</div>
+
+<script>
+  const toolbar = document.getElementById('toolbar');
+  const history = document.getElementById('history');
+  const findInput = document.getElementById('findInput');
+  const metrics = document.getElementById('metrics');
+
+  function showMetrics() {
+    const tb = toolbar.getBoundingClientRect();
+    const tr = document.querySelector('.toolbar-row').getBoundingClientRect();
+    const hb = history.getBoundingClientRect();
+    const cs = getComputedStyle(toolbar);
+    metrics.textContent =
+      `tb ${Math.round(tb.width)}x${Math.round(tb.height)} ` +
+      `radius ${cs.borderTopLeftRadius} ` +
+      `row ${Math.round(tr.width)}x${Math.round(tr.height)} ` +
+      `hist ${Math.round(hb.width)}x${Math.round(hb.height)} ` +
+      `hist.visible=${history.classList.contains('visible')} ` +
+      `tb.open=${toolbar.classList.contains('open')}`;
+  }
+
+  // Update metrics every animation frame so we capture mid-transition values
+  function tick() { showMetrics(); requestAnimationFrame(tick); }
+  tick();
+
+  function openFind() {
+    toolbar.classList.add('open');
+    history.classList.add('visible');
+    requestAnimationFrame(() => { findInput.focus(); });
+  }
+  function closeFind() {
+    history.classList.remove('visible');
+    toolbar.classList.remove('open');
+    findInput.value = '';
+  }
+  // Measure & pin closed width so width can interpolate
+  requestAnimationFrame(() => {
+    const w = toolbar.getBoundingClientRect().width;
+    if (w > 0) toolbar.style.setProperty('--toolbar-closed-w', w + 'px');
+  });
+
+  document.getElementById('btn-open').onclick = openFind;
+  document.getElementById('btn-close').onclick = closeFind;
+  document.getElementById('btn-history').onclick = () => history.classList.toggle('visible');
+  document.getElementById('btn-debug').onclick = () => document.body.classList.toggle('debug');
+
+  // Expose for Playwright
+  window.openFind = openFind;
+  window.closeFind = closeFind;
+  window.getToolbarMetrics = () => {
+    const tb = toolbar.getBoundingClientRect();
+    const tr = document.querySelector('.toolbar-row').getBoundingClientRect();
+    const hb = history.getBoundingClientRect();
+    const cs = getComputedStyle(toolbar);
+    return {
+      toolbar: { w: tb.width, h: tb.height, radius: cs.borderTopLeftRadius },
+      row: { w: tr.width, h: tr.height },
+      history: { w: hb.width, h: hb.height, visible: history.classList.contains('visible') },
+      open: toolbar.classList.contains('open'),
+    };
+  };
+</script>
+</body>
+</html>

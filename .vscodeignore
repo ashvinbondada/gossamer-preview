@@ -1,5 +1,8 @@
 .vscode/**
 .vscode-test/**
+.claude/**
+.env
+posthog-audit-report.md
 src/**
 docs/**
 .gitignore

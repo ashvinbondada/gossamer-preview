@@ -69,6 +69,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       perfMark('setImmediate: connectPostHog starting');
       try { connectPostHog(); } catch {}
       perfMark('setImmediate: connectPostHog returned');
+      capture('extension activated', { vscode_version: vscode.version });
     });
   } else {
     perfMark(`telemetry disabled (user=${userOptedIn} vscode=${vsCodeTelemetryOn})`);

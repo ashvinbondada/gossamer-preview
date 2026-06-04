@@ -56,6 +56,7 @@ export function connectPostHog(): void {
     _client.identify({
       distinctId: _distinctId,
       properties: {
+        extension_version: _version,
         $set: { extension_version: _version },
         $set_once: { first_seen_version: _version },
       },

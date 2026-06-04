@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2]
+
+- **Copy button is now icon-only.** Long filenames were pushing the Find pill off the toolbar. The filename label has been removed; tooltip still says "Copy relative path" so the affordance is unchanged.
+- **Telemetry: activation heartbeat.** New `extension activated` event fires once per session after PostHog connects, so install-vs-activate-vs-preview is measurable independent of whether the user opens a `.html` file.
+- **Telemetry: version on identify.** `extension_version` is now a top-level event property on identify calls so version breakdowns work in PostHog.
+- Packaging: excluded `.claude/`, `.env`, and the local audit report from the shipped `.vsix` (smaller download, no incidental files).
+
 ## [2.1.0] — Major UX rewrite
 
 A near-total rebuild of the preview toolbar and how shortcuts interact with the previewed content. If you've been hitting any of the rough edges in 2.0.x — Find not working, Cmd+P not opening Quick Open from inside the preview, Cursor hanging on window reload — they're all fixed here.

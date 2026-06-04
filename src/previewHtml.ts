@@ -82,7 +82,6 @@ export function buildToolbarMarkup(previewUrl: string, title: string): string {
       <button id="editSrc" title="Edit HTML source">✎ Edit</button>
       <button id="copyFile" title="Copy relative path">
         <span id="copyIcon">⎘</span>
-        <span id="copyLabel">${escapeHtml(title)}</span>
       </button>
     </div>
   </div>
@@ -207,12 +206,10 @@ ${clipDebug}
   // copy filename
   var copyBtn = document.getElementById('copyFile');
   var copyIcon = document.getElementById('copyIcon');
-  var copyLabel = document.getElementById('copyLabel');
   copyBtn.onclick = function() {
     var done = function() {
       copyIcon.textContent = '✓';
-      copyLabel.textContent = 'Copied';
-      setTimeout(function() { copyIcon.textContent = '⎘'; copyLabel.textContent = FILENAME; }, 1200);
+      setTimeout(function() { copyIcon.textContent = '⎘'; }, 1200);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(COPY_TARGET).then(done, done);

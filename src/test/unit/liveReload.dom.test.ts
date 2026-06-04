@@ -19,13 +19,6 @@ function setup(bodyHtml: string = '<p>Lorem ipsum dolor sit amet</p><p>Another l
 
   const { window } = dom;
 
-  // Stub WebSocket so the injected script's WS connect doesn't blow up in jsdom.
-  (window as any).WebSocket = class {
-    onmessage: any; onclose: any;
-    constructor(_: string) { /* no-op */ }
-    close() {}
-  };
-
   // jsdom doesn't implement scrollIntoView — stub it on Element prototype.
   (window as any).Element.prototype.scrollIntoView = function() { /* no-op */ };
 

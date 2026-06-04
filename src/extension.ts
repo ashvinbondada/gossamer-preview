@@ -139,19 +139,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   // host can't terminate cleanly.
   context.subscriptions.push({
     dispose: () => {
-      perfMark('subscription.dispose start');
-      // Snapshot handles BEFORE our cleanup so we can compare with deactivate.
-      try {
-        const handles = (process as any)._getActiveHandles?.() ?? [];
-        perfMark(`  before-cleanup handles: ${handles.length} (${handles.map((h: any) => h?.constructor?.name).slice(0, 12).join(',')})`);
-      } catch {}
-      try { server.dispose(); } catch (err) { perfMark('server.dispose threw ' + (err as any)?.message); }
-      try { disposeAllPreviews(); } catch (err) { perfMark('disposeAllPreviews threw ' + (err as any)?.message); }
-      try {
-        const handles = (process as any)._getActiveHandles?.() ?? [];
-        perfMark(`  after-cleanup handles: ${handles.length} (${handles.map((h: any) => h?.constructor?.name).slice(0, 12).join(',')})`);
-      } catch {}
-      perfMark('subscription.dispose done');
+      try { server.dispose(); } catch {}
+      try { disposeAllPreviews(); } catch {}
     }
   });
 
@@ -239,35 +228,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     urlPathFor: (fsPath: string) => server.setFile(fsPath),
   };
 
-  // Heartbeat: log every 500ms so we can see whether the extension host is
-  // alive during the post-activate / pre-deactivate quiet period. If the
-  // heartbeats stop firing before deactivate(), the event loop is starved.
-  // If they keep firing right up to deactivate, then we're alive and the
-  // hang is in Cursor's renderer/main-process awaiting something else.
-  let __heartbeat = 0;
-  const __heartbeatTimer = setInterval(() => {
-    __heartbeat++;
-    perfMark(`♥ heartbeat #${__heartbeat}`);
-  }, 500);
-  context.subscriptions.push({ dispose: () => clearInterval(__heartbeatTimer) });
-
   perfMark('activate() returning after ' + (Date.now() - __activateStart) + 'ms');
   return exportedApi;
 }
 
 export function deactivate() {
-  perfMark('========== deactivate() called pid=' + process.pid + ' ==========');
-
-  // Snapshot what's keeping the event loop alive. If this list is non-trivial
-  // when we return from deactivate(), Cursor's main process can't terminate
-  // our extension host until all those handles close — which IS the reload hang.
-  try {
-    const handles = (process as any)._getActiveHandles?.() ?? [];
-    const requests = (process as any)._getActiveRequests?.() ?? [];
-    perfMark(`active handles: ${handles.length} (types: ${handles.map((h: any) => h?.constructor?.name).slice(0, 20).join(', ')})`);
-    perfMark(`active requests: ${requests.length} (types: ${requests.map((r: any) => r?.constructor?.name).slice(0, 20).join(', ')})`);
-  } catch (err: any) { perfMark('handle snapshot threw: ' + err?.message); }
-
   // Fire-and-forget PostHog shutdown with a tight cap so we never block window
   // reload on a network flush. If the SDK hangs, we'd rather lose a few queued
   // events than freeze the editor.
@@ -277,26 +242,7 @@ export function deactivate() {
       new Promise<void>((resolve) => setTimeout(resolve, 200)),
     ]).catch(() => {});
   } catch {}
-  // Watchdog: 100ms after we return, snapshot handles again. If the process
-  // is still alive at this point with active handles, that's our hang.
-  // setImmediate also fires once the call stack clears, so we see the
-  // "right after deactivate" state too.
-  try {
-    setImmediate(() => {
-      const handles = (process as any)._getActiveHandles?.() ?? [];
-      perfMark(`[setImmediate after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
-    });
-    setTimeout(() => {
-      const handles = (process as any)._getActiveHandles?.() ?? [];
-      perfMark(`[+100ms after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
-    }, 100);
-    setTimeout(() => {
-      const handles = (process as any)._getActiveHandles?.() ?? [];
-      perfMark(`[+1000ms after deactivate] handles=${handles.length} types=${handles.map((h: any) => h?.constructor?.name).slice(0, 30).join(',')}`);
-    }, 1000);
-  } catch {}
 
-  perfMark('deactivate() returning');
   // IMPORTANT: do NOT return a Promise here. VS Code awaits the deactivate
   // return value, and any slow async work blocks reload.
 }

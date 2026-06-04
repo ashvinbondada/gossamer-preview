@@ -1,10 +1,8 @@
 import * as assert from 'assert';
 import * as http from 'http';
-import * as net from 'net';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import { LiveReloadServer, injectReloadScript } from '../../liveReload';
 
 function tmpHtml(content: string): string {
@@ -23,63 +21,6 @@ function get(port: number, urlPath: string): Promise<{ status: number; body: str
   });
 }
 
-// Minimal WS client: sends a handshake, then parses frames.
-function wsConnect(port: number, urlPath: string): Promise<{ socket: net.Socket; nextMessage: () => Promise<string> }> {
-  return new Promise((resolve, reject) => {
-    const key = crypto.randomBytes(16).toString('base64');
-    const socket = net.connect(port, '127.0.0.1', () => {
-      socket.write(
-        `GET ${urlPath} HTTP/1.1\r\n` +
-        `Host: 127.0.0.1:${port}\r\n` +
-        `Upgrade: websocket\r\n` +
-        `Connection: Upgrade\r\n` +
-        `Sec-WebSocket-Key: ${key}\r\n` +
-        `Sec-WebSocket-Version: 13\r\n\r\n`
-      );
-    });
-    let buffer = Buffer.alloc(0);
-    let handshakeDone = false;
-    const pendingResolvers: ((m: string) => void)[] = [];
-    const messageQueue: string[] = [];
-
-    socket.on('data', (chunk) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (!handshakeDone) {
-        const sep = buffer.indexOf('\r\n\r\n');
-        if (sep < 0) return;
-        const headers = buffer.slice(0, sep).toString();
-        if (!/101/.test(headers)) { reject(new Error('Handshake failed: ' + headers)); return; }
-        buffer = buffer.slice(sep + 4);
-        handshakeDone = true;
-        resolve({
-          socket,
-          nextMessage: () => new Promise((res) => {
-            if (messageQueue.length) res(messageQueue.shift()!);
-            else pendingResolvers.push(res);
-          })
-        });
-      }
-      while (handshakeDone && buffer.length >= 2) {
-        const b1 = buffer[0];
-        const b2 = buffer[1];
-        const opcode = b1 & 0x0f;
-        let len = b2 & 0x7f;
-        let offset = 2;
-        if (len === 126) { len = buffer.readUInt16BE(2); offset = 4; }
-        else if (len === 127) { len = Number(buffer.readBigUInt64BE(2)); offset = 10; }
-        if (buffer.length < offset + len) break;
-        const payload = buffer.slice(offset, offset + len).toString();
-        buffer = buffer.slice(offset + len);
-        if (opcode === 0x1) {
-          if (pendingResolvers.length) pendingResolvers.shift()!(payload);
-          else messageQueue.push(payload);
-        }
-      }
-    });
-    socket.on('error', reject);
-  });
-}
-
 describe('injectReloadScript', () => {
   it('inserts before </body>', () => {
     const out = injectReloadScript('<html><body>hi</body></html>');
@@ -93,8 +34,9 @@ describe('injectReloadScript', () => {
     assert.ok(out.includes('<script>'));
   });
 
-  // Behavioral coverage for the WS reload client and find helper lives in liveReload.dom.test.ts.
-  // These two tests only guard the placement contract of injectReloadScript itself.
+  // Behavioral coverage for the reload listener and find helper lives in
+  // liveReload.dom.test.ts. These two tests only guard the placement contract
+  // of injectReloadScript itself.
 });
 
 describe('LiveReloadServer HTTP', () => {
@@ -121,7 +63,7 @@ describe('LiveReloadServer HTTP', () => {
     const r = await get(server.port, urlPath);
     assert.strictEqual(r.status, 200);
     assert.ok(r.body.includes('<h1>hello</h1>'));
-    assert.ok(r.body.includes('WebSocket'));
+    assert.ok(r.body.includes('gossamer-reload'), 'live-reload script should be injected');
     fs.unlinkSync(file);
   });
 
@@ -184,7 +126,7 @@ describe('LiveReloadServer HTTP', () => {
   });
 });
 
-describe('LiveReloadServer WebSocket', () => {
+describe('LiveReloadServer reload', () => {
   let server: LiveReloadServer;
 
   beforeEach(async () => {
@@ -193,44 +135,17 @@ describe('LiveReloadServer WebSocket', () => {
   });
   afterEach(() => server.dispose());
 
-  it('accepts WS upgrade and receives reload message', async function() {
-    this.timeout(5000);
-    const file = tmpHtml('<body></body>');
-    const urlPath = server.setFile(file);
-    const { socket, nextMessage } = await wsConnect(server.port, urlPath);
-    // give the server a tick to register the client
-    await new Promise((r) => setTimeout(r, 30));
-    server.reload(file);
-    const msg = await nextMessage();
-    assert.strictEqual(msg, 'reload');
-    socket.destroy();
-    fs.unlinkSync(file);
+  // Reload is delivered to in-editor webviews via the registered listener
+  // (which extension.ts wires to webview.postMessage). There is no longer a
+  // WebSocket transport.
+  it('invokes the registered reload listener with the fs path', () => {
+    const seen: string[] = [];
+    server.onReloadRequested((p) => seen.push(p));
+    server.reload('/tmp/some-file.html');
+    assert.deepStrictEqual(seen, ['/tmp/some-file.html']);
   });
 
-  it('only notifies clients for the matching file path', async function() {
-    this.timeout(5000);
-    const f1 = tmpHtml('<body>1</body>');
-    const f2 = tmpHtml('<body>2</body>');
-    const p1 = server.setFile(f1);
-    const p2 = server.setFile(f2);
-    const c1 = await wsConnect(server.port, p1);
-    const c2 = await wsConnect(server.port, p2);
-    await new Promise((r) => setTimeout(r, 30));
-
-    let got2 = false;
-    c2.nextMessage().then(() => { got2 = true; });
-
-    server.reload(f1);
-    const m1 = await c1.nextMessage();
-    assert.strictEqual(m1, 'reload');
-    await new Promise((r) => setTimeout(r, 100));
-    assert.strictEqual(got2, false, 'file2 client should not have received');
-
-    c1.socket.destroy(); c2.socket.destroy();
-    fs.unlinkSync(f1); fs.unlinkSync(f2);
-  });
-
-  it('reload() on unregistered path is a no-op (does not throw)', () => {
+  it('reload() with no listener registered is a no-op (does not throw)', () => {
     assert.doesNotThrow(() => server.reload('/tmp/never-registered.html'));
   });
 });

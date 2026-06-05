@@ -69,7 +69,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       perfMark('setImmediate: connectPostHog starting');
       try { connectPostHog(); } catch {}
       perfMark('setImmediate: connectPostHog returned');
-      capture('extension activated', { vscode_version: vscode.version });
+      capture('extension activated', {
+        vscode_version: vscode.version,
+        // Editor identity. vscode.version is only the base VS Code version and
+        // is identical in forks, so it can't tell Cursor/Windsurf/VS Code apart.
+        // appName ("Visual Studio Code" | "Cursor" | "Windsurf" | ...) and
+        // appHost ("desktop" | "web") are what actually distinguish the editor,
+        // so we can segment activations by which editor users are on.
+        app_name: vscode.env.appName,
+        app_host: vscode.env.appHost,
+      });
     });
   } else {
     perfMark(`telemetry disabled (user=${userOptedIn} vscode=${vsCodeTelemetryOn})`);

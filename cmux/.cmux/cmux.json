@@ -1,0 +1,70 @@
+{
+  "actions": {
+    "gossamer.serve": {
+      "type": "command",
+      "title": "Gossamer: Start preview daemon",
+      "subtitle": "Serve HTML with live reload on http://127.0.0.1:7654",
+      "command": "gossamer serve",
+      "target": "newTabInCurrentPane",
+      "icon": { "type": "emoji", "value": "🕸️" }
+    },
+    "gossamer.status": {
+      "type": "command",
+      "title": "Gossamer: Preview status",
+      "command": "gossamer status",
+      "target": "currentTerminal",
+      "icon": { "type": "emoji", "value": "🕸️" }
+    },
+    "gossamer.stop": {
+      "type": "command",
+      "title": "Gossamer: Stop preview daemon",
+      "command": "gossamer stop",
+      "target": "currentTerminal",
+      "icon": { "type": "emoji", "value": "🕸️" }
+    },
+    "gossamer.preview-workspace": {
+      "type": "workspaceCommand",
+      "commandName": "Gossamer Preview"
+    }
+  },
+  "commands": [
+    {
+      "name": "Gossamer Preview",
+      "description": "Terminal + live HTML preview browser side by side",
+      "keywords": ["gossamer", "preview", "html", "browser"],
+      "workspace": {
+        "name": "Gossamer",
+        "color": "#7c9eff",
+        "layout": {
+          "direction": "horizontal",
+          "split": 0.5,
+          "children": [
+            {
+              "pane": {
+                "surfaces": [
+                  {
+                    "type": "terminal",
+                    "name": "shell",
+                    "command": "gossamer serve",
+                    "focus": true
+                  }
+                ]
+              }
+            },
+            {
+              "pane": {
+                "surfaces": [
+                  {
+                    "type": "browser",
+                    "name": "Preview",
+                    "url": "http://127.0.0.1:7654/"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

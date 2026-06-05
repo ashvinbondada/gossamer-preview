@@ -1,0 +1,44 @@
+{
+  "name": "gossamer-cmux",
+  "version": "0.1.0",
+  "description": "Live HTML preview with live reload inside cmux's embedded browser. The canvas for agentic coding, for the cmux terminal.",
+  "license": "MIT",
+  "author": "ashvinbondada",
+  "homepage": "https://github.com/ashvinbondada/gossamer-preview/tree/main/cmux",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashvinbondada/gossamer-preview.git",
+    "directory": "cmux"
+  },
+  "bugs": {
+    "url": "https://github.com/ashvinbondada/gossamer-preview/issues"
+  },
+  "keywords": [
+    "cmux",
+    "live-reload",
+    "html",
+    "preview",
+    "agentic",
+    "ai"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "gossamer": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -p ./ -w",
+    "prepublishOnly": "npm run build",
+    "smoke": "node dist/test/smoke.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

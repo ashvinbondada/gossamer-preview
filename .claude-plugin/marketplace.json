@@ -1,0 +1,18 @@
+{
+  "name": "gossamer",
+  "owner": {
+    "name": "ashvinbondada"
+  },
+  "description": "Live HTML preview for agentic coding — render and live-reload the HTML your agent generates.",
+  "plugins": [
+    {
+      "name": "gossamer-cmux",
+      "source": "./cmux/claude-plugin",
+      "description": "Auto-open agent-generated HTML in cmux's embedded browser with live reload.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": { "name": "ashvinbondada" },
+      "homepage": "https://github.com/ashvinbondada/gossamer-preview/tree/main/cmux"
+    }
+  ]
+}

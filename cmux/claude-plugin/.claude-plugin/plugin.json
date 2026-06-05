@@ -1,0 +1,11 @@
+{
+  "name": "gossamer-cmux",
+  "displayName": "Gossamer Preview for cmux",
+  "description": "Auto-open agent-generated HTML in cmux's embedded browser with live reload.",
+  "version": "0.1.0",
+  "author": { "name": "ashvinbondada" },
+  "homepage": "https://github.com/ashvinbondada/gossamer-preview/tree/main/cmux",
+  "repository": "https://github.com/ashvinbondada/gossamer-preview",
+  "license": "MIT",
+  "keywords": ["cmux", "html", "preview", "live-reload", "agentic"]
+}

@@ -1,0 +1,101 @@
+name: release-cmux
+
+# Ship gossamer-cmux: build standalone binaries on a real machine for each OS
+# (Linux container, Windows VM, macOS VM via GitHub-hosted runners), publish the
+# CLI to npm, and attach the binaries to a GitHub Release.
+#
+# Trigger by pushing a tag like `cmux-v0.1.0`, or run manually from the Actions
+# tab. npm publishing requires an NPM_TOKEN repo secret; without it the publish
+# job is skipped and only the binaries + GitHub Release are produced.
+
+on:
+  push:
+    tags:
+      - 'cmux-v*'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: cmux
+
+jobs:
+  build:
+    name: build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      # One native runner per OS/arch — SEA builds a binary for the host the job
+      # runs on, so each artifact is genuinely built on that platform: a Linux
+      # container, a Windows VM, and macOS VMs.
+      matrix:
+        include:
+          - os: ubuntu-latest        # Linux x64 (container-class runner)
+            artifact: linux-x64
+          - os: ubuntu-24.04-arm     # Linux arm64
+            artifact: linux-arm64
+          - os: windows-latest       # Windows VM (x64)
+            artifact: win-x64
+          - os: macos-latest         # macOS VM, Apple Silicon
+            artifact: macos-arm64
+          - os: macos-13             # macOS VM, Intel
+            artifact: macos-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gossamer-cmux-${{ matrix.artifact }}
+          path: cmux/build/gossamer-*
+          if-no-files-found: error
+
+  publish-npm:
+    name: publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    # Only attempt when a token is configured.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: npm publish
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: skip notice
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: echo "NPM_TOKEN not set — skipping npm publish (binaries still released)."
+
+  release:
+    name: github release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Artifacts download to the workspace root, not cmux/.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Rename per-OS binaries
+        run: |
+          mkdir -p dist-bin
+          find artifacts -type f -print -exec cp {} dist-bin/ \;
+          ls -la dist-bin
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist-bin/*
+          generate_release_notes: true

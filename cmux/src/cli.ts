@@ -6,8 +6,10 @@ import { ping, register, shutdown } from './client';
 import { ensureDaemon } from './daemon';
 import { insideCmux, hasCmuxCli, openInCmux } from './cmux';
 
+// Literal require so pkg's static analysis bundles package.json into the
+// single-file binary (a path.join(...) require would not be detected).
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const pkg = require(path.join(__dirname, '..', 'package.json')) as { version: string };
+const pkg = require('../package.json') as { version: string };
 const VERSION = pkg.version;
 
 interface Flags {

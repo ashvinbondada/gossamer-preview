@@ -35,10 +35,13 @@
     "build": "tsc -p ./",
     "watch": "tsc -p ./ -w",
     "prepublishOnly": "npm run build",
-    "smoke": "node dist/test/smoke.js"
+    "smoke": "node dist/test/smoke.js",
+    "package": "node scripts/build-binary.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "esbuild": "^0.24.0",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^5.0.0"
   }
 }

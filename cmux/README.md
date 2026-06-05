@@ -31,6 +31,25 @@ npm install -g gossamer-cmux      # provides the `gossamer` command
 # or run ad-hoc with: npx gossamer-cmux open file.html
 ```
 
+### Standalone binaries (no Node required)
+
+Each release ships a single-file `gossamer` executable per platform —
+`gossamer-macos-arm64`, `gossamer-macos-x64`, `gossamer-linux-x64`,
+`gossamer-linux-arm64`, `gossamer-win-x64.exe` — attached to the
+[GitHub Releases](https://github.com/ashvinbondada/gossamer-preview/releases).
+Download, `chmod +x`, and run. (cmux is macOS, so `gossamer-macos-arm64` is the
+one most users want.)
+
+Build one yourself for the current OS with Node's built-in SEA packaging:
+
+```bash
+npm run package      # → cmux/build/gossamer-<os>-<arch>
+```
+
+Binaries are built natively per OS in CI (Linux container, Windows VM, macOS VMs)
+— see [`.github/workflows/release-cmux.yml`](../.github/workflows/release-cmux.yml)
+— and a [`Dockerfile`](Dockerfile) reproduces the Linux build.
+
 ### As a Claude Code plugin (auto-open)
 
 So agent-generated HTML opens automatically while you work in cmux:

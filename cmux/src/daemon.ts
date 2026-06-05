@@ -30,12 +30,20 @@ export async function ensureDaemon(port: number): Promise<PingResult> {
 
   // Spawn `gossamer serve` detached, with stdio redirected to a log file so it
   // outlives the terminal that launched it.
+  //
+  // How we re-invoke ourselves depends on how we're running:
+  //  - As a packaged single-file binary (pkg / Node SEA), process.execPath IS
+  //    the gossamer binary, so we pass the subcommand directly.
+  //  - As plain `node dist/cli.js`, process.execPath is node, so we must pass
+  //    the cli.js entry script before the subcommand.
   const out = fs.openSync(path.join(logDir(), 'daemon.log'), 'a');
-  const child = spawn(
-    process.execPath,
-    [path.join(__dirname, 'cli.js'), 'serve', '--port', String(port)],
-    { detached: true, stdio: ['ignore', out, out] }
-  );
+  const args = isPackagedBinary()
+    ? ['serve', '--port', String(port)]
+    : [path.join(__dirname, 'cli.js'), 'serve', '--port', String(port)];
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio: ['ignore', out, out],
+  });
   child.unref();
 
   // Poll until it answers (or give up after ~6s).
@@ -46,4 +54,16 @@ export async function ensureDaemon(port: number): Promise<PingResult> {
     if (info && info.gossamer) return info;
   }
   throw new Error(`Preview daemon did not come up on port ${port}. See ${path.join(logDir(), 'daemon.log')}`);
+}
+
+/** True when running as a pkg or Node SEA single-file executable. */
+export function isPackagedBinary(): boolean {
+  if ((process as unknown as { pkg?: unknown }).pkg) return true;
+  try {
+    // node:sea is available on Node 20+; isSea() throws/missing otherwise.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sea = require('node:sea') as { isSea?: () => boolean };
+    if (sea && typeof sea.isSea === 'function' && sea.isSea()) return true;
+  } catch { /* not a SEA build */ }
+  return false;
 }

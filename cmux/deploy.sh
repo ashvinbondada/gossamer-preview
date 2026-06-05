@@ -40,11 +40,14 @@ node -e "
 echo "→ Publishing gossamer-cmux@${VERSION} to npm..."
 npm publish --access public
 
-echo "✓ Published gossamer-cmux@${VERSION}"
+echo "✓ Published gossamer-cmux@${VERSION} to npm"
 echo
-echo "Next:"
+echo "Next — cut the cross-platform binaries + GitHub Release by tagging:"
 echo "  git commit -am \"gossamer-cmux v${VERSION}\""
-echo "  git push origin main --follow-tags"
+echo "  git tag cmux-v${VERSION}"
+echo "  git push origin HEAD --follow-tags"
+echo "  # → release-cmux.yml builds gossamer binaries on Linux/Windows/macOS"
+echo "  #   runners and attaches them to the GitHub Release."
 echo
 echo "Users install the cmux plugin with:"
 echo "  /plugin marketplace add ashvinbondada/gossamer-preview"

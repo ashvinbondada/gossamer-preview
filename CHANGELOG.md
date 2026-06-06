@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.4]
+
+### ⚠️ Telemetry behavior change
+
+Gossamer Preview's telemetry is now controlled solely by the `gossamer-preview.telemetry.enabled` setting (default `on`). The global VS Code/Cursor telemetry setting (`telemetry.telemetryLevel`) is no longer a gate.
+
+**What this means for you:**
+- If you previously had `gossamer-preview.telemetry.enabled` on (the default) AND global VS Code telemetry off, Gossamer was silent. Starting in 2.1.4, it will send anonymous events.
+- If you want Gossamer telemetry off, set `gossamer-preview.telemetry.enabled` to `false`. That setting is now the only switch.
+- What we collect and what we never collect is unchanged. See [PRIVACY.md](PRIVACY.md) for the full list.
+
+Why: most of our users run Cursor, and many Cursor users have global telemetry off by default. That meant we couldn't see whether the extension actually works for the majority of the user base. The per-extension switch is still respected — opting out via the Gossamer-specific setting silences everything.
+
 ## [2.1.3]
 
 ### 🐛 Fixed

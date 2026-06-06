@@ -1,6 +1,6 @@
 # Gossamer Preview — Privacy Notice
 
-Last updated: 2026-06-03
+Last updated: 2026-06-06
 
 This extension collects a small amount of **anonymous** usage and error data to help us understand which features are used, catch regressions, and prioritize improvements. We try to take the smallest possible amount of data needed to do that, and never collect anything that identifies you personally.
 
@@ -45,11 +45,7 @@ PostHog acts as our data processor. They never share, sell, or resell collected 
 
 ## How to disable telemetry
 
-Telemetry is honored by **both** of these switches — disable either and no events are sent:
-
-### Option 1: Per-extension setting
-
-In VS Code/Cursor settings (JSON):
+Gossamer Preview has its own telemetry switch, and it is the **only** gate. In VS Code/Cursor settings (JSON):
 
 ```json
 {
@@ -59,19 +55,13 @@ In VS Code/Cursor settings (JSON):
 
 Or through the Settings UI: search for "Gossamer Preview" and uncheck "Telemetry: Enabled."
 
-### Option 2: Global VS Code/Cursor telemetry setting
-
-In settings (JSON):
-
-```json
-{
-  "telemetry.telemetryLevel": "off"
-}
-```
-
-This disables telemetry for **all** extensions that honor it (including this one and Microsoft's own).
-
 The setting takes effect immediately — no reload required.
+
+### Note on the global VS Code telemetry setting
+
+The global `telemetry.telemetryLevel` setting in VS Code/Cursor does **not** control Gossamer Preview's telemetry. If you have global telemetry off but want Gossamer telemetry off too, you must disable it explicitly via the setting above.
+
+**Changed in 2.1.4:** Previously, Gossamer Preview also honored `telemetry.telemetryLevel`. As of 2.1.4, the per-extension setting is the only gate. This was made deliberately, with an updated CHANGELOG entry, so the behavior change is visible to users.
 
 ## Data deletion requests
 

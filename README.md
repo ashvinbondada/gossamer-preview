@@ -50,6 +50,6 @@ Gossamer Preview sends a small amount of **anonymous** usage and error telemetry
 
 The identifier is VS Code's anonymous `machineId`, which resets when you reinstall the editor.
 
-**To disable telemetry**, set `gossamer-preview.telemetry.enabled` to `false`, or turn off `telemetry.telemetryLevel` globally — either takes effect immediately, no reload required.
+**To disable telemetry**, set `gossamer-preview.telemetry.enabled` to `false`. Takes effect immediately, no reload required. The global `telemetry.telemetryLevel` setting does not affect Gossamer Preview — control it via the per-extension setting.
 
 **Full details:** see [PRIVACY.md](PRIVACY.md) for the complete list of what we collect, what we don't, how to opt out, and how to request data deletion.

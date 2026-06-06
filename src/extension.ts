@@ -56,15 +56,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   // it off the activation critical path.
   setIdentity(vscode.env.machineId, version);
 
-  // Telemetry is gated by BOTH the global VS Code telemetry setting AND our
-  // own per-user opt-in. Either off = no events. Default is on for both.
+  // Telemetry is gated ONLY by our own per-extension opt-in. The global VS
+  // Code `telemetry.telemetryLevel` setting is no longer a gate (changed in
+  // 2.1.4). Users who want Gossamer telemetry off can set
+  // `gossamer-preview.telemetry.enabled` to false. Documented in PRIVACY.md,
+  // README.md, the setting's description in package.json, and CHANGELOG.md.
   const userOptedIn = vscode.workspace
     .getConfiguration('gossamer-preview')
     .get<boolean>('telemetry.enabled', true);
-  const vsCodeTelemetryOn = vscode.env.isTelemetryEnabled !== false;
-  const telemetryEnabled = userOptedIn && vsCodeTelemetryOn;
 
-  if (telemetryEnabled) {
+  if (userOptedIn) {
     setImmediate(() => {
       perfMark('setImmediate: connectPostHog starting');
       try { connectPostHog(); } catch {}
@@ -72,15 +73,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       capture('extension activated', { vscode_version: vscode.version });
     });
   } else {
-    perfMark(`telemetry disabled (user=${userOptedIn} vscode=${vsCodeTelemetryOn})`);
+    perfMark(`telemetry disabled (gossamer-preview.telemetry.enabled=false)`);
   }
 
-  // Honor runtime changes to either telemetry switch.
-  context.subscriptions.push(vscode.env.onDidChangeTelemetryEnabled?.(() => {
-    if (vscode.env.isTelemetryEnabled === false) {
-      shutdownPostHog().catch(() => {});
-    }
-  }) ?? { dispose: () => {} });
+  // Honor runtime changes to our own telemetry switch. The global VS Code
+  // setting is intentionally not listened for — see 2.1.4 release notes.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (!e.affectsConfiguration('gossamer-preview.telemetry.enabled')) return;
     const nowEnabled = vscode.workspace.getConfiguration('gossamer-preview').get<boolean>('telemetry.enabled', true);

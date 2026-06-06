@@ -1,6 +1,8 @@
 .vscode/**
 .vscode-test/**
 .claude/**
+.playwright-mcp/**
+harness-*.png
 .env
 posthog-audit-report.md
 src/**

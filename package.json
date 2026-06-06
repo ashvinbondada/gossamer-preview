@@ -64,7 +64,7 @@
         "gossamer-preview.telemetry.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Send anonymous usage and error telemetry to help improve Gossamer Preview. We collect: extension version, preview opened/closed events, shortcut usage, and errors. We never collect: file contents, file paths, or anything that identifies you personally. The identifier is VS Code's anonymous machineId. Honored alongside the global VS Code telemetry setting — if either is off, no events are sent."
+          "description": "Send anonymous usage and error telemetry to help improve Gossamer Preview. We collect: extension version, preview opened/closed events, shortcut usage, and errors. We never collect: file contents, file paths, or anything that identifies you personally. The identifier is VS Code's anonymous machineId. This setting is Gossamer Preview's only telemetry gate — disabling it stops all Gossamer telemetry. The global VS Code telemetry setting (`telemetry.telemetryLevel`) does not affect Gossamer Preview; control it here."
         }
       }
     }

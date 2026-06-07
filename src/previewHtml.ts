@@ -535,8 +535,6 @@ ${clipDebug}
           shiftKey: !!msg.shiftKey, altKey: !!msg.altKey,
         });
       }
-    } else if (msg.type === 'gossamer-iframe-log') {
-      __clip(String(msg.msg || ''));
     } else if (msg.type === 'gossamer-clipboard-write') {
       // The iframe forwards selection text up to us because navigator.clipboard
       // fails silently inside cross-origin iframes within vscode-webview://.
@@ -570,10 +568,6 @@ ${clipDebug}
       } else {
         __clip('  empty text, skipped');
       }
-    } else if (msg.type === 'gossamer-perf') {
-      // Iframe sends perf timestamps in its own performance.now() reference frame.
-      // Display relative to parent's __PERF_T0 so all marks are comparable.
-      __mark('[iframe] ' + msg.name);
     }
   });
 

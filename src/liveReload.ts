@@ -1,23 +1,6 @@
 import * as http from 'http';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
-import { capture, captureException } from './posthog';
-
-// Internal dev-only flag. Hard-coded false for shipped builds. Flip locally to
-// emit iframe-side perf marks (forwarded to parent overlay). Not user-toggleable.
-const PERF_OVERLAY_ENABLED = false;
-
-const PERF_HEADER = PERF_OVERLAY_ENABLED ? `
-  function __iframeMark(name) {
-    try {
-      var t = (performance.now ? performance.now() : Date.now());
-      parent.postMessage({ type: 'gossamer-perf', name: name, t: t }, '*');
-    } catch (e) {}
-  }
-  __iframeMark('iframe script start');
-` : `
-  function __iframeMark() {}
-`;
+import { captureException } from './posthog';
 
 const INJECTED = `
 <style>
@@ -25,7 +8,6 @@ const INJECTED = `
 </style>
 <script>
 (function() {
-${PERF_HEADER}
   // Live reload via postMessage from parent webview — NOT WebSocket.
   // The old WebSocket-based reload was the root cause of window-reload hangs:
   // Cursor's webview disposal awaited the ws.close handshake, which could
@@ -34,19 +16,9 @@ ${PERF_HEADER}
   // teardown semantics; it just stops being delivered.
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'gossamer-reload') {
-      try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME got gossamer-reload, calling location.reload()' }, '*'); } catch (err) {}
       location.reload();
     }
   });
-  __iframeMark('iframe reload listener attached');
-  try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME reload listener attached' }, '*'); } catch (err) {}
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() { __iframeMark('iframe DOMContentLoaded'); });
-  } else {
-    __iframeMark('iframe DOM already ready');
-  }
-  window.addEventListener('load', function() { __iframeMark('iframe window LOAD'); });
 
   var HL = '__gossamer_hit__';
   var ACTIVE = '__gossamer_hit_active__';
@@ -184,7 +156,6 @@ ${PERF_HEADER}
     if (key === 'c' || key === 'x') {
       var sel = window.getSelection();
       var text = sel ? sel.toString() : '';
-      try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME Cmd+' + key.toUpperCase() + ' selection.len=' + text.length + ' preview=' + JSON.stringify(text.slice(0, 40)) }, '*'); } catch (err) {}
       if (text) {
         e.preventDefault();
         e.stopPropagation();
@@ -227,7 +198,6 @@ export function injectReloadScript(html: string): string {
 
 export class LiveReloadServer {
   private server: http.Server;
-  private clients: Map<string, Set<any>> = new Map(); // urlPath -> clients
   private fileMap: Map<string, string> = new Map(); // urlPath -> fsPath
   private bufferText: Map<string, string> = new Map(); // fsPath -> in-memory editor text
   public port = 0;
@@ -235,8 +205,8 @@ export class LiveReloadServer {
   // Returns the live HTML content for an fs path: in-memory editor buffer if
   // the user has unsaved edits, otherwise reads from disk. Returns the RAW
   // file content (no live-reload script injection — that's only for the
-  // legacy HTTP server path used by external browsers). Used by the
-  // srcdoc-based iframe to assign content directly without going through HTTP.
+  // HTTP server path used by external browsers). Used by the srcdoc-based
+  // iframe to assign content directly without going through HTTP.
   getRawHtml(fsPath: string): string {
     const buffered = this.bufferText.get(fsPath);
     if (buffered !== undefined) return buffered;
@@ -285,78 +255,23 @@ export class LiveReloadServer {
         res.end('Error reading file');
       }
     });
-
-    this.setupWebSocket();
-  }
-
-  private setupWebSocket() {
-    this.server.on('upgrade', (req, socket, head) => {
-      const key = req.headers['sec-websocket-key'];
-      if (!key) { socket.destroy(); return; }
-
-      const urlPath = req.url?.split('?')[0] ?? '/';
-      const acceptKey = crypto
-        .createHash('sha1')
-        .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
-        .digest('base64');
-
-      socket.write(
-        'HTTP/1.1 101 Switching Protocols\r\n' +
-        'Upgrade: websocket\r\n' +
-        'Connection: Upgrade\r\n' +
-        `Sec-WebSocket-Accept: ${acceptKey}\r\n\r\n`
-      );
-
-      const ws = {
-        readyState: 1,
-        send: (msg: string) => {
-          const payload = Buffer.from(msg);
-          const len = payload.length;
-          let header: Buffer;
-          if (len < 126) {
-            header = Buffer.alloc(2);
-            header[0] = 0x81; header[1] = len;
-          } else if (len < 65536) {
-            header = Buffer.alloc(4);
-            header[0] = 0x81; header[1] = 126;
-            header.writeUInt16BE(len, 2);
-          } else {
-            header = Buffer.alloc(10);
-            header[0] = 0x81; header[1] = 127;
-            header.writeBigUInt64BE(BigInt(len), 2);
-          }
-          socket.write(Buffer.concat([header, payload]));
-        },
-        terminate: () => socket.destroy(),
-      };
-
-      if (!this.clients.has(urlPath)) this.clients.set(urlPath, new Set());
-      this.clients.get(urlPath)!.add(ws);
-      socket.on('close', () => this.clients.get(urlPath)?.delete(ws));
-      socket.on('error', () => this.clients.get(urlPath)?.delete(ws));
-    });
   }
 
   start(): Promise<number> {
     const PREFERRED_PORT = 7654;
     const STARTUP_TIMEOUT_MS = 3000;
-    const t0 = Date.now();
-    const dbg = (msg: string) => { try { console.log('[gossamer] server +' + (Date.now() - t0) + 'ms ' + msg); } catch {} };
-    dbg('start() invoked');
     return new Promise((resolve, reject) => {
       let settled = false;
       const done = (port: number) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeoutHandle);
-        dbg('resolved port=' + port);
         resolve(port);
       };
       const fail = (err: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeoutHandle);
-        dbg('rejected ' + err.message);
         reject(err);
       };
 
@@ -372,14 +287,12 @@ export class LiveReloadServer {
       };
 
       const tryFallback = () => {
-        dbg('preferred port in use, falling back to random');
         this.server.removeAllListeners('error');
         this.server.once('error', (err: NodeJS.ErrnoException) => fail(err));
         this.server.listen(0, '127.0.0.1', onListen);
       };
 
       this.server.once('error', (err: NodeJS.ErrnoException) => {
-        dbg('listen error code=' + err.code);
         if (err.code === 'EADDRINUSE') {
           tryFallback();
         } else {
@@ -405,68 +318,30 @@ export class LiveReloadServer {
     try { this._reloadListener?.(fsPath); } catch (err) {
       console.log('[gossamer] reload listener threw:', err);
     }
-    // Still also push to legacy WebSocket clients for backwards compat with
-    // external browsers (people opening http://localhost:7654/foo.html
-    // directly in Chrome). These are not webviews and not the hang trigger.
-    const urlPath = this.registerFile(fsPath);
-    const bucket = this.clients.get(urlPath);
-    const clientCount = bucket?.size ?? 0;
-    bucket?.forEach((ws) => { if (ws.readyState === 1) ws.send('reload'); });
-    if (clientCount > 0) {
-      capture('live reload triggered', { client_count: clientCount });
-    }
   }
 
   dispose() {
-    const t0 = Date.now();
-    const dbg = (msg: string) => {
-      try { console.log('[gossamer] dispose +' + (Date.now() - t0) + 'ms ' + msg); } catch {}
-      // Also write to the disk lifecycle log so we can see it post-mortem.
-      try {
-        // Use require to avoid a circular import at module load time.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { perfMark } = require('./perf');
-        perfMark('  liveReload.dispose +' + (Date.now() - t0) + 'ms ' + msg);
-      } catch {}
-    };
-    dbg('start');
-    // Forcibly terminate every WebSocket wrapper we know about.
-    let wsCount = 0;
-    this.clients.forEach((bucket) => bucket.forEach((ws) => {
-      wsCount++;
-      try { ws.terminate?.(); } catch {}
-    }));
-    this.clients.clear();
-    dbg('terminated ' + wsCount + ' ws wrappers');
-
-    // Forcibly destroy ALL still-open server sockets (HTTP keep-alive, WebSocket
-    // upgrades, etc.). Without this, server.close() awaits each socket's
-    // natural close which can hang for many seconds on window reload — the
-    // browser-side closed connections don't always propagate the FIN quickly,
-    // and Node's HTTP server holds open Keep-Alive sockets by default.
+    // Forcibly destroy ALL still-open server sockets (HTTP keep-alive sockets).
+    // Without this, server.close() awaits each socket's natural close which can
+    // hang for many seconds on window reload — the browser-side closed
+    // connections don't always propagate the FIN quickly, and Node's HTTP
+    // server holds open Keep-Alive sockets by default.
     try {
       // closeAllConnections is Node 18.2+ and atomically destroys every
       // connection regardless of state. This is the magic bullet.
       const anyServer = this.server as any;
       if (typeof anyServer.closeAllConnections === 'function') {
         anyServer.closeAllConnections();
-        dbg('closeAllConnections() called');
       }
       if (typeof anyServer.closeIdleConnections === 'function') {
         anyServer.closeIdleConnections();
-        dbg('closeIdleConnections() called');
       }
-    } catch (err: any) {
-      dbg('connection close error: ' + (err && err.message ? err.message : err));
-    }
+    } catch {}
 
     // server.close() returns the port to the OS. Without unref(), the server
     // keeps the event loop alive even after close() — which would block the
     // extension host from terminating cleanly.
     try { (this.server as any).unref?.(); } catch {}
-    this.server.close((err) => {
-      dbg('server.close cb ' + (err ? 'err=' + err.message : 'ok'));
-    });
-    dbg('dispose returned (server.close is async)');
+    this.server.close();
   }
 }

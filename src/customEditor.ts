@@ -46,47 +46,31 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     const fileLabel = path.basename(document.uri.fsPath);
     perfMark(`resolve(${fileLabel}) entry`);
     const t = perfScope('customEditor.resolve', document.uri.fsPath);
-    const __t0 = Date.now();
-    const __dbg = (msg: string) => {
-      try { console.log('[gossamer] resolve ' + fileLabel + ' +' + (Date.now() - __t0) + 'ms ' + msg); } catch {}
-    };
-    __dbg('start');
     panel.webview.options = { enableScripts: true };
     t.mark('webview.options set');
-    __dbg('webview.options set');
 
     // Wait for the live-reload server to be ready. NO placeholder, NO double
     // panel.webview.html assignment — both broke shortcut forwarding (Cmd+P/C/V).
     try {
       await this.serverReady;
     } catch (err) {
-      __dbg('serverReady REJECTED ' + (err instanceof Error ? err.message : String(err)));
       captureException(err, { context: 'custom_editor_server_ready' });
       panel.webview.html = renderErrorHtml(path.basename(document.uri.fsPath), err);
       __test.webviewHtmlAssignCount++;
       return;
     }
     t.mark('server ready');
-    __dbg('serverReady resolved');
 
     const previewUrl = this.getPreviewUrl(document.uri.fsPath);
     t.mark('getPreviewUrl done');
-    __dbg('getPreviewUrl ' + previewUrl);
     const copyPath = vscode.workspace.asRelativePath(document.uri.fsPath, false);
     t.mark('asRelativePath done');
-    // DIAGNOSTIC: when true, skip the iframe entirely so we can test whether the
-    // iframe itself (not extension code) is what's making reload hang.
-    const SKIP_IFRAME_DIAGNOSTIC = false;
-    const html = SKIP_IFRAME_DIAGNOSTIC
-      ? `<!DOCTYPE html><html><body style="background:#0d0d0f;color:#e6e6e6;font-family:sans-serif;padding:20px"><h2>Diagnostic mode</h2><p>iframe disabled to test reload hang.</p><p>File: ${path.basename(document.uri.fsPath)}</p></body></html>`
-      : buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
+    const html = buildHtml(previewUrl, path.basename(document.uri.fsPath), copyPath);
     t.mark(`buildHtml done (${html.length} chars)`);
-    __dbg('buildHtml ' + html.length + ' chars');
     panel.webview.html = html;
     __test.webviewHtmlAssignCount++;
     registerPanel(document.uri.fsPath, panel);
     t.mark('webview.html assigned');
-    __dbg('webview.html assigned — DONE');
     perfMark(`resolve(${fileLabel}) webview.html assigned, resolve will return`);
 
     // Push the initial iframe content as srcdoc. The iframe element is rendered

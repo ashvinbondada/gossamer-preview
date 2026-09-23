@@ -2,7 +2,7 @@
   "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
   "description": "The canvas for agentic coding. Live-preview HTML docs, UIs, and interfaces your AI agent generates.",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "publisher": "ashvinbondada",
   "icon": "icon.png",
   "engines": {
@@ -22,6 +22,8 @@
     "vscode:prepublish": "npm run compile",
     "test:unit": "tsc -p ./ && mocha --recursive 'out/test/unit/**/*.test.js' --timeout 10000",
     "test:integration": "tsc -p ./ && node ./out/test/integration/runTest.js",
+    "test:integration:headless": "tsc -p ./ && GOSSAMER_TEST_HEADLESS=1 node ./out/test/integration/runTest.js",
+    "test:integration:cursor": "tsc -p ./ && GOSSAMER_TEST_HOST=cursor GOSSAMER_TEST_HEADLESS=1 node ./out/test/integration/runTest.js",
     "test": "npm run test:unit && npm run test:integration"
   },
   "contributes": {
@@ -65,6 +67,12 @@
           "type": "boolean",
           "default": true,
           "description": "Send anonymous usage and error telemetry to help improve Gossamer Preview. We collect: extension version, preview opened/closed events, shortcut usage, and errors. We never collect: file contents, file paths, or anything that identifies you personally. The identifier is VS Code's anonymous machineId. This setting is Gossamer Preview's only telemetry gate — disabling it stops all Gossamer telemetry. The global VS Code telemetry setting (`telemetry.telemetryLevel`) does not affect Gossamer Preview; control it here."
+        },
+        "gossamer-preview.allowedLocalhostPorts": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "default": [],
+          "description": "Additional localhost ports your previewed HTML is allowed to fetch() from. Gossamer already allows common dev ports (3000, 5173, 7654, 7655, 8000, 8080, etc.); add any extras here. Reopen the preview after changing this. Without portMapping the VS Code webview service worker blocks localhost responses with a CORS error."
         }
       }
     }

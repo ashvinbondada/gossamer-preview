@@ -5,6 +5,7 @@ import { perfScope, perfMark } from './perf';
 import { capture, captureException } from './posthog';
 import { dispatchHostKey } from './hostKeys';
 import { registerPanel } from './panelRegistry';
+import { handleBridgeMessage, abortPanelRequests } from './localhostBridge';
 
 export const VIEW_TYPE = 'gossamer-preview.html';
 
@@ -25,10 +26,20 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,monospace;font-size:12p
 // Exposed for integration tests. The number of times the resolve path took the
 // slow placeholder branch — must stay 0 in the steady-state for shortcut
 // pass-through invariants to hold (see memory: feedback_cmd_shortcut_passthrough_invariant).
-export const __test = {
+export const __test: {
+  placeholderUseCount: number;
+  webviewHtmlAssignCount: number;
+  lastPanel: vscode.WebviewPanel | undefined;
+  reset(): void;
+} = {
   placeholderUseCount: 0,
   webviewHtmlAssignCount: 0,
-  reset() { this.placeholderUseCount = 0; this.webviewHtmlAssignCount = 0; },
+  lastPanel: undefined,
+  reset() {
+    this.placeholderUseCount = 0;
+    this.webviewHtmlAssignCount = 0;
+    this.lastPanel = undefined;
+  },
 };
 
 export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
@@ -84,6 +95,7 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     __dbg('buildHtml ' + html.length + ' chars');
     panel.webview.html = html;
     __test.webviewHtmlAssignCount++;
+    __test.lastPanel = panel;
     registerPanel(document.uri.fsPath, panel);
     t.mark('webview.html assigned');
     __dbg('webview.html assigned — DONE');
@@ -123,6 +135,7 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
     panel.onDidDispose(() => {
       perfMark(`panel.onDidDispose(${fileLabel}) fired`);
       try { editorChangeDisposable.dispose(); } catch {}
+      abortPanelRequests(panel);
       perfMark(`panel.onDidDispose(${fileLabel}) done`);
     });
 
@@ -157,6 +170,8 @@ export class GossamerHtmlEditor implements vscode.CustomTextEditorProvider {
           const fs = require('fs');
           fs.appendFileSync('/tmp/gossamer-debug.log', `[${new Date().toISOString()}] [webview] ${msg.msg}\n`);
         } catch {}
+      } else if (msg?.type === 'gossamer-bridge-fetch') {
+        handleBridgeMessage(panel, msg);
       } else if (msg?.type === 'reload') {
         try {
           const { wrapWithBase } = await import('./previewHtml');

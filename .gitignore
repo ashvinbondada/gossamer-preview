@@ -5,3 +5,4 @@ out/
 .DS_Store
 .vscode-test/
 .claude/
+docs/briefs/_local_*

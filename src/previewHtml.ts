@@ -535,6 +535,20 @@ ${clipDebug}
           shiftKey: !!msg.shiftKey, altKey: !!msg.altKey,
         });
       }
+    } else if (msg.type === 'gossamer-bridge-fetch') {
+      // Relay localhost fetch request from iframe up to the extension host.
+      // The host makes the Node HTTP call and posts back a result message.
+      if (vscodeApi) vscodeApi.postMessage(msg);
+    } else if (msg.type === 'gossamer-bridge-fetch-result') {
+      // Relay extension host's fetch result back down into the iframe.
+      if (frame && frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
+    } else if (msg.type === 'gossamer-test-fetch') {
+      // Integration test harness: forward test-fetch commands down into iframe.
+      if (frame && frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
+    } else if (msg.type === 'gossamer-test-fetch-result' || msg.type === 'gossamer-test-ready') {
+      // Relay test results from iframe up to the extension host so the test's
+      // onDidReceiveMessage can see them.
+      if (vscodeApi) vscodeApi.postMessage(msg);
     } else if (msg.type === 'gossamer-iframe-log') {
       __clip(String(msg.msg || ''));
     } else if (msg.type === 'gossamer-clipboard-write') {

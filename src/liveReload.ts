@@ -32,6 +32,165 @@ ${PERF_HEADER}
   // take 30-60 seconds because the browser doesn't always propagate FIN
   // promptly when an iframe is being torn down. postMessage has no such
   // teardown semantics; it just stops being delivered.
+  // ===== LOCALHOST FETCH BRIDGE =====
+  // VS Code's webview service worker intercepts http://localhost:* fetches and
+  // fails to resolve the webview ID for srcdoc iframes, producing "Failed to
+  // fetch" regardless of CORS headers. We bypass it entirely: monkey-patch
+  // window.fetch and XMLHttpRequest.open so that any localhost/127.0.0.1
+  // request is routed via postMessage to the parent webview, which relays to
+  // the extension host (Node.js), which makes the actual HTTP call and sends
+  // back the response. Non-localhost URLs pass through to the native fetch.
+  (function() {
+    var _nativeFetch = window.fetch;
+    var _pendingFetch = {};
+
+    function isLocalhost(url) {
+      try {
+        var u = new URL(url, location.href);
+        return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+      } catch (e) { return false; }
+    }
+
+    function nextId() {
+      return 'bf-' + Math.random().toString(36).slice(2) + '-' + Date.now();
+    }
+
+    function bridgeFetch(url, init) {
+      var id = nextId();
+      return new Promise(function(resolve, reject) {
+        _pendingFetch[id] = { resolve: resolve, reject: reject };
+
+        var method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+        var headers = {};
+        if (init && init.headers) {
+          if (init.headers && typeof init.headers.forEach === 'function') {
+            init.headers.forEach(function(v, k) { headers[k] = v; });
+          } else {
+            for (var k in init.headers) {
+              if (Object.prototype.hasOwnProperty.call(init.headers, k)) headers[k] = init.headers[k];
+            }
+          }
+        }
+
+        var bodyStr = null;
+        if (init && init.body != null) {
+          if (typeof init.body === 'string') {
+            bodyStr = init.body;
+          } else if (init.body instanceof URLSearchParams) {
+            bodyStr = init.body.toString();
+            if (!headers['content-type'] && !headers['Content-Type']) headers['content-type'] = 'application/x-www-form-urlencoded';
+          } else if (init.body instanceof ArrayBuffer || ArrayBuffer.isView(init.body)) {
+            // Binary: base64-encode so it survives postMessage serialization
+            var bytes = init.body instanceof ArrayBuffer ? new Uint8Array(init.body) : new Uint8Array(init.body.buffer, init.body.byteOffset, init.body.byteLength);
+            var bin = '';
+            for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            bodyStr = btoa(bin);
+            headers['x-gossamer-body-encoding'] = 'base64';
+          } else {
+            bodyStr = String(init.body);
+          }
+        }
+
+        parent.postMessage({
+          type: 'gossamer-bridge-fetch',
+          id: id, url: url, method: method,
+          headers: headers, body: bodyStr
+        }, '*');
+      });
+    }
+
+    window.addEventListener('message', function(e) {
+      var msg = e.data;
+      if (!msg || msg.type !== 'gossamer-bridge-fetch-result') return;
+      var pending = _pendingFetch[msg.id];
+      if (!pending) return;
+      delete _pendingFetch[msg.id];
+
+      if (msg.error) { pending.reject(new TypeError(msg.error)); return; }
+
+      // Decode base64 body back to Uint8Array
+      var bodyBytes;
+      try {
+        var bin2 = atob(msg.bodyB64 || '');
+        bodyBytes = new Uint8Array(bin2.length);
+        for (var j = 0; j < bin2.length; j++) bodyBytes[j] = bin2.charCodeAt(j);
+      } catch (e2) { bodyBytes = new Uint8Array(0); }
+
+      var hdrs = new Headers();
+      if (msg.headers) {
+        for (var hk in msg.headers) {
+          if (Object.prototype.hasOwnProperty.call(msg.headers, hk)) {
+            try { hdrs.append(hk, msg.headers[hk]); } catch (e3) {}
+          }
+        }
+      }
+
+      var resp = new Response(bodyBytes, {
+        status: msg.status || 200,
+        statusText: msg.statusText || 'OK',
+        headers: hdrs,
+      });
+      pending.resolve(resp);
+    });
+
+    window.fetch = function(input, init) {
+      var url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+      if (isLocalhost(url)) return bridgeFetch(url, init);
+      return _nativeFetch.apply(this, arguments);
+    };
+
+    // XMLHttpRequest shim for localhost
+    var _XHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      this._gossamerUrl = String(url);
+      this._gossamerMethod = method;
+      this._gossamerIsLocal = isLocalhost(this._gossamerUrl);
+      if (!this._gossamerIsLocal) {
+        return _XHROpen.apply(this, arguments);
+      }
+      // Stub out native open — we'll intercept send() instead
+      this._gossamerHeaders = {};
+      this._gossamerOpened = true;
+    };
+    var _XHRSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+    XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+      if (this._gossamerOpened && this._gossamerIsLocal) {
+        this._gossamerHeaders[name] = value;
+        return;
+      }
+      return _XHRSetHeader.apply(this, arguments);
+    };
+    var _XHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body) {
+      if (!this._gossamerOpened || !this._gossamerIsLocal) {
+        return _XHRSend.apply(this, arguments);
+      }
+      var self = this;
+      var bodyStr = body != null ? String(body) : null;
+      bridgeFetch(this._gossamerUrl, {
+        method: this._gossamerMethod || 'GET',
+        headers: this._gossamerHeaders || {},
+        body: bodyStr,
+      }).then(function(resp) {
+        resp.text().then(function(text) {
+          Object.defineProperty(self, 'readyState', { get: function() { return 4; }, configurable: true });
+          Object.defineProperty(self, 'status', { get: function() { return resp.status; }, configurable: true });
+          Object.defineProperty(self, 'statusText', { get: function() { return resp.statusText; }, configurable: true });
+          Object.defineProperty(self, 'responseText', { get: function() { return text; }, configurable: true });
+          Object.defineProperty(self, 'response', { get: function() { return text; }, configurable: true });
+          if (typeof self.onreadystatechange === 'function') try { self.onreadystatechange(); } catch (e) {}
+          if (typeof self.onload === 'function') try { self.onload(); } catch (e) {}
+          try { self.dispatchEvent(new Event('readystatechange')); } catch (e) {}
+          try { self.dispatchEvent(new Event('load')); } catch (e) {}
+        });
+      }).catch(function(err) {
+        if (typeof self.onerror === 'function') try { self.onerror(err); } catch (e) {}
+        try { self.dispatchEvent(new Event('error')); } catch (e) {}
+      });
+    };
+  })();
+  // ===== END LOCALHOST FETCH BRIDGE =====
+
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'gossamer-reload') {
       try { parent.postMessage({ type: 'gossamer-iframe-log', msg: 'IFRAME got gossamer-reload, calling location.reload()' }, '*'); } catch (err) {}
@@ -47,6 +206,35 @@ ${PERF_HEADER}
     __iframeMark('iframe DOM already ready');
   }
   window.addEventListener('load', function() { __iframeMark('iframe window LOAD'); });
+
+  // ===== SAME-PAGE ANCHOR FIX =====
+  // We inject <base href="http://localhost:PORT/"> (see wrapWithBase in
+  // previewHtml.ts) so relative asset URLs resolve correctly. But that base
+  // also retargets fragment-only links: clicking <a href="#foo"> resolves to
+  // http://localhost:PORT/#foo, which the browser treats as a full
+  // cross-document navigation (not an in-page scroll), because the document's
+  // actual URL is about:srcdoc while its base URL is the http: origin. That
+  // navigation hits the live-reload server's root path, which was never
+  // registered, producing "No file loaded for this path" and replacing the
+  // whole document (which also kills this script, breaking copy). Intercept
+  // fragment-only anchor clicks here and scroll manually instead.
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el.tagName !== 'A') el = el.parentElement;
+    if (!el) return;
+    var raw = el.getAttribute('href') || '';
+    if (raw.charAt(0) !== '#' || raw.length < 2) return;
+    e.preventDefault();
+    var id = decodeURIComponent(raw.slice(1));
+    var target = document.getElementById(id) || document.getElementsByName(id)[0];
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (history && history.replaceState) {
+        try { history.replaceState(null, '', raw); } catch (err) {}
+      }
+    }
+  }, false);
+  // ===== END SAME-PAGE ANCHOR FIX =====
 
   var HL = '__gossamer_hit__';
   var ACTIVE = '__gossamer_hit_active__';

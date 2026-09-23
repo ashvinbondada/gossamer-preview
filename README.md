@@ -20,6 +20,7 @@ AI coding agents like Claude, Claude Code, and Cursor generate HTML files as ric
 - **VS Code shortcuts work inside the preview** — Cmd/Ctrl+P (Quick Open), Cmd/Ctrl+Shift+P (Command Palette), Cmd/Ctrl+S (Save), Cmd/Ctrl+W (Close), Cmd/Ctrl+B (Sidebar), Cmd/Ctrl+`` ` `` (Terminal) — all work even when focus is in the previewed page. (Custom keybindings for these chords are not currently honored inside the preview; defaults are used.)
 - **Update notifications** — in-editor banner when a new version is installed, with a changelog link
 - **Zero config** — no setup, no dependencies, just install and open an HTML file
+- **Localhost fetch works from inside the preview** — previewed HTML can `fetch()` your local dev servers (common ports allowed by default; add extras via `gossamer-preview.allowedLocalhostPorts`)
 
 ## How It Works
 

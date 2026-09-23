@@ -5,6 +5,7 @@ import { perfScope } from './perf';
 import { dispatchHostKey } from './hostKeys';
 import { capture, captureException } from './posthog';
 import { registerPanel } from './panelRegistry';
+import { handleBridgeMessage, abortPanelRequests } from './localhostBridge';
 
 export { buildHtml } from './previewHtml';
 
@@ -47,6 +48,8 @@ export function showPreview(fsPath: string, previewUrl: string, getRawHtml?: (fs
         const fs = require('fs');
         fs.appendFileSync('/tmp/gossamer-debug.log', `[${new Date().toISOString()}] [webview] ${msg.msg}\n`);
       } catch {}
+    } else if (msg?.type === 'gossamer-bridge-fetch') {
+      handleBridgeMessage(panel, msg);
     } else if (msg?.type === 'reload') {
       if (!getRawHtml) return;
       try {
@@ -59,7 +62,7 @@ export function showPreview(fsPath: string, previewUrl: string, getRawHtml?: (fs
       }
     }
   });
-  panel.onDidDispose(() => panels.delete(fsPath));
+  panel.onDidDispose(() => { panels.delete(fsPath); abortPanelRequests(panel); });
   panels.set(fsPath, panel);
   registerPanel(fsPath, panel);
 

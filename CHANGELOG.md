@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.5]
+
+### ✨ Added
+
+- **Previewed HTML can now `fetch()` your local dev servers.** Previously, any `fetch("http://localhost:PORT/...")` from inside the preview failed with a CORS error because VS Code's webview service worker can't resolve the webview ID for `srcdoc` iframes. Requests to localhost/127.0.0.1 are now bridged through the extension host instead of going through the browser's network stack directly. Common dev ports are allowed by default; add others via the new `gossamer-preview.allowedLocalhostPorts` setting.
+
+### 🐛 Fixed
+
+- **In-page anchor links (`<a href="#section">`) no longer break the preview.** Clicking one used to navigate the entire iframe away (because the injected `<base href>` retargets fragment-only links to the live-reload server), landing on a "No file loaded for this path" error page and silently breaking copy/paste until reload. Same-page anchor clicks are now intercepted and scrolled to manually.
+
 ## [2.1.4]
 
 ### ⚠️ Telemetry behavior change

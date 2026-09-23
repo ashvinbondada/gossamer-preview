@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Localhost Fetch Test</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 24px; background: #0d0d0f; color: #e6e6e6; }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    button { background: #2a2a30; color: #e6e6e6; border: 1px solid #444; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    button:hover { background: #34343c; }
+    #log { margin-top: 16px; background: #1a1a1f; border: 1px solid #2a2a30; border-radius: 6px; padding: 10px 12px; font-family: 'SF Mono', ui-monospace, monospace; font-size: 11.5px; white-space: pre-wrap; max-height: 60vh; overflow: auto; }
+    .ok { color: #6dd58c; }
+    .err { color: #ff8a8a; }
+    .info { color: #b0b0b8; }
+  </style>
+</head>
+<body>
+  <h1>Localhost fetch test</h1>
+  <p style="font-size:12.5px;color:#b0b0b8;margin:0 0 12px">Targets <code>http://localhost:7655</code>. Run <code>python3 docs/mockups/localhost-fetch-stub.py</code> to start the server.</p>
+  <button id="pingBtn">GET /ping</button>
+  <button id="saveBtn">POST /save</button>
+  <div id="log"></div>
+
+<script>
+  var logEl = document.getElementById('log');
+  function log(cls, msg) {
+    var line = document.createElement('div');
+    line.className = cls;
+    line.textContent = '[' + new Date().toISOString().substr(11, 12) + '] ' + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // Describe a fetch failure in maximum detail. fetch() throws TypeError("Failed to fetch")
+  // for both CSP blocks AND network errors — the only way to distinguish is to also catch
+  // SecurityPolicyViolationEvent on document.
+  var lastViolation = null;
+  document.addEventListener('securitypolicyviolation', function(e) {
+    lastViolation = {
+      blockedURI: e.blockedURI,
+      violatedDirective: e.violatedDirective,
+      effectiveDirective: e.effectiveDirective,
+      originalPolicy: e.originalPolicy,
+      disposition: e.disposition,
+      sourceFile: e.sourceFile,
+      lineNumber: e.lineNumber,
+    };
+    log('err', 'CSP VIOLATION: ' + e.violatedDirective + ' blocked ' + e.blockedURI);
+  });
+
+  async function runFetch(url, init) {
+    lastViolation = null;
+    var t0 = performance.now();
+    try {
+      var resp = await fetch(url, init);
+      var body = await resp.text();
+      var ms = (performance.now() - t0).toFixed(1);
+      log('ok', 'OK ' + (init && init.method || 'GET') + ' ' + url + ' → ' + resp.status + ' in ' + ms + 'ms');
+      log('info', '  body: ' + body.slice(0, 200));
+      return { ok: true, status: resp.status, body: body, ms: Number(ms), violation: lastViolation };
+    } catch (err) {
+      var ms = (performance.now() - t0).toFixed(1);
+      log('err', 'FAIL ' + (init && init.method || 'GET') + ' ' + url + ' → ' + (err && err.name) + ': ' + (err && err.message) + ' in ' + ms + 'ms');
+      if (lastViolation) log('err', '  matched CSP violation on ' + lastViolation.violatedDirective);
+      return {
+        ok: false,
+        error: String(err && err.message || err),
+        errorName: err && err.name,
+        errorStack: err && err.stack,
+        ms: Number(ms),
+        violation: lastViolation,
+      };
+    }
+  }
+
+  document.getElementById('pingBtn').onclick = function() {
+    runFetch('http://localhost:7655/ping');
+  };
+  document.getElementById('saveBtn').onclick = function() {
+    runFetch('http://localhost:7655/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer: 'hello from gossamer' }),
+    });
+  };
+
+  // Auto-run on load so the page works as a visual smoke test (matches the
+  // "GETs on load or shows server-not-running" acceptance criterion).
+  window.addEventListener('load', function() {
+    log('info', 'auto: GET /ping on load');
+    runFetch('http://localhost:7655/ping');
+  });
+
+  // ===== Test harness hook =====
+  // The integration test posts {type:'gossamer-test-fetch', id, url, init} into
+  // the parent webview, which relays it down into this iframe via postMessage.
+  // We run the fetch and post {type:'gossamer-test-fetch-result', id, result}
+  // back up the chain. The parent webview forwards results to the extension host.
+  window.addEventListener('message', function(e) {
+    var msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'gossamer-test-fetch') {
+      log('info', 'test: ' + (msg.init && msg.init.method || 'GET') + ' ' + msg.url);
+      runFetch(msg.url, msg.init).then(function(result) {
+        try {
+          parent.postMessage({ type: 'gossamer-test-fetch-result', id: msg.id, result: result }, '*');
+        } catch (err) {}
+      });
+    }
+  });
+
+  // Announce we're ready so the test doesn't race iframe hydration.
+  try {
+    parent.postMessage({ type: 'gossamer-test-ready' }, '*');
+  } catch (err) {}
+</script>
+</body>
+</html>

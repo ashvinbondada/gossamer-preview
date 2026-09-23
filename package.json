@@ -2,7 +2,7 @@
   "name": "gossamer-preview",
   "displayName": "Gossamer Preview",
   "description": "The canvas for agentic coding. Live-preview HTML docs, UIs, and interfaces your AI agent generates.",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "publisher": "ashvinbondada",
   "icon": "icon.png",
   "engines": {
@@ -70,7 +70,11 @@
         },
         "gossamer-preview.allowedLocalhostPorts": {
           "type": "array",
-          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
           "default": [],
           "description": "Additional localhost ports your previewed HTML is allowed to fetch() from. Gossamer already allows common dev ports (3000, 5173, 7654, 7655, 8000, 8080, etc.); add any extras here. Reopen the preview after changing this. Without portMapping the VS Code webview service worker blocks localhost responses with a CORS error."
         }
